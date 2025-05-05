@@ -6,7 +6,7 @@ Script of evaluate the individual parcellation results
 Created on 12/4/2023 at 4:22 PM
 Author: dzhi
 """
-import time, os
+import time, os, warnings
 import numpy as np
 import torch as pt
 import nibabel as nb
@@ -457,9 +457,8 @@ def build_msc_resting_data(dataset_dir, subj_list, this_at, ses_list='all',
     return data
 
 
-def load_randy_contrasts(ds_name, space='fs32k', ses_id='ses-s1', type=None,
-             subj=None, fields=None, smooth=None, verbose=False):
-    ##TODO
+def load_randy_contrasts(space='fs32k', ses_id='ses-s1', type=None,
+                         subj=None, hemis=None, smooth=2, verbose=False):
     """Loads all the CIFTI files in the data directory of a certain space / type and returns they content as a Numpy array
 
     Args:
@@ -467,21 +466,15 @@ def load_randy_contrasts(ds_name, space='fs32k', ses_id='ses-s1', type=None,
         ses_id (str): Session ID (Defaults to 'ses-s1').
         type (str): Type of data (Defaults to 'CondHalf').
         subj (ndarray, str, or list):  Subject numbers /names to get [None = all]
-        fields (list): Column names of info stucture that are returned
-            these are also be tested to be equivalent across subjects
     Returns:
         Data (ndarray): (n_subj, n_contrast, n_voxel) array of data
         info (DataFramw): Data frame with common descriptor
     """
-    T = self.get_participants()
-    # Assemble the data
-    Data = None
+    dataset = ds.DataSetRANDY15('/home/dzhi/eris_mount/Tian/RANDY15')
+    T = dataset.get_participants()
     # Deal with subset of subject option
     if subj is None:
         subj = T.participant_id
-        # only get data from subjects that have rest, if specified in dataset description
-        if type == 'Tseries' and 'ses-rest' in T.columns:
-            subj = T[T['ses-rest'] == 1].participant_id.tolist()
     elif isinstance(subj, str):
         subj = [subj]
     elif isinstance(subj, (int, np.integer)):
@@ -496,10 +489,23 @@ def load_randy_contrasts(ds_name, space='fs32k', ses_id='ses-s1', type=None,
     else:
         raise (NameError('subj must be a str, int, list or ndarray'))
     if type is None:
-        type = self.default_type
+        type = dataset.default_type
 
-    info_com = self.get_info(
-        subj=subj, ses_id=ses_id, type=type, fields=fields)
+    hemis_dict = {'L': 'cortex_left', 'R': 'cortex_right'}
+    this_at, _ = am.get_atlas(space)
+    this_at.calculate_symmetry()
+
+    max = 0
+    # Loop over the different subjects to find the most complete info
+    for s in subj:
+        # Get an check the information
+        info_raw = pd.read_csv(dataset.contrast_dir.format(s)
+                               + f'/{s}_AllContrasts.tsv', sep='\t')
+        # Keep the most complete info
+        if info_raw.shape[0] > max:
+            info_com = info_raw
+            max = info_raw.shape[0]
+    base = np.asarray(info_com['contrast_name'])
 
     # Loop again to assemble the data
     Data_list = []
@@ -510,32 +516,40 @@ def load_randy_contrasts(ds_name, space='fs32k', ses_id='ses-s1', type=None,
             print(f'- Getting data for {s} in {space}')
         # Load the data
         if smooth is not None:
-            C = nb.load(self.data_dir.format(s)
-                        + f'/{s}_space-{space}_{ses_id}_{type}_desc-sm{smooth}.dscalar.nii')
+            C = nb.load(dataset.contrast_dir.format(s)
+                        + f'/{s}_AllContrasts_{space}_sm{smooth}_Zmap.dscalar.nii')
         else:
-            C = nb.load(self.data_dir.format(s)
-                        + f'/{s}_space-{space}_{ses_id}_{type}.dscalar.nii')
+            C = nb.load(dataset.contrast_dir.format(s)
+                        + f'/{s}_AllContrasts_{space}_Zmap.dscalar.nii')
         this_data = C.get_fdata()
+
+        if hemis is not None:  # if cortical data
+            stru_idx = this_at.structure.index(hemis_dict[hemis])
+            this_data = this_data[:, this_at.indx_full[stru_idx]]
+        else:
+            this_data = this_data[:, np.concatenate(this_at.indx_full)]
 
         # Check if this subject data in incomplete
         if this_data.shape[0] != info_com.shape[0]:
-            this_info = pd.read_csv(self.data_dir.format(s)
-                                    + f'/{s}_{ses_id}_{type}.tsv', sep='\t')
-            base = np.asarray(info_com['names'])
-            incomplete = np.asarray(this_info['names'])
-            for j in range(base.shape[0]):
-                if base[j] != incomplete[j]:
-                    warnings.warn(
-                        f'{s}, {ses_id}, {type} - missing data {base[j]}')
-                    incomplete = np.insert(
-                        np.asarray(incomplete), j, np.nan)
-                    this_data = np.insert(this_data, j, np.nan, axis=0)
+            this_info = pd.read_csv(dataset.contrast_dir.format(s)
+                                    + f'/{s}_AllContrasts.tsv', sep='\t')
+            incomplete = np.asarray(this_info['contrast_name'])
+            contrast_to_row = {name: i for i, name in enumerate(incomplete)}
+            aligned_data = np.full((len(base), this_data.shape[1]), np.nan)
+
+            for j, name in enumerate(base):
+                if name in contrast_to_row:
+                    aligned_data[j] = this_data[contrast_to_row[name]]
+                else:
+                    warnings.warn(f'{s} - missing contrast {name}')
+            this_data = aligned_data
+
         Data_list.append(this_data[np.newaxis, ...])
     # concatenate along the first dimension (subjects)
     Data = np.concatenate(Data_list, axis=0)
     # Ensure that infinite values (from div / 0) show up as NaNs
     Data[np.isinf(Data)] = np.nan
-    return Data, info_com
+    return [Data], info_com
 
 
 def eval_task_inhomo_MSHBM_vs_HBP_indiv():
@@ -694,16 +708,18 @@ if __name__ == "__main__":
 
     # 3. RANDY15
     ## Randy 15 resting-state
-    data, info, _ = ds.get_dataset(BASE_DIR, 'RANDY15', atlas=atlas.name, sess='ses-rest1',
-                                   type='Ico642Run', subj=None, smooth=None)
+    data = []
+    for sn in [1,2,3,4,5]:
+        this_data, info, _ = ds.get_dataset(BASE_DIR, 'RANDY15', atlas=atlas.name, sess=f'ses-rest{sn}',
+                                       type='Ico642Run', subj=None, smooth=None)
+        data.append(this_data)
 
-    data, info, _ = ds.get_dataset(BASE_DIR, 'MSC', atlas=atlas.name, sess='ses-task',
-                                       type='CondRun', subj=None, smooth=None)
+    # data, info, _ = ds.get_dataset(BASE_DIR, 'MSC', atlas=atlas.name, sess='ses-task',
+    #                                    type='CondRun', subj=None, smooth=None)
 
-    data = [data[:,info.sn == i,:] for i in [1,3,5,7,9]]
-    cond_vec = [np.arange(1,13)] * 5
-    part_vec = [np.repeat(np.array([1]), 12)] * 5
-    subj_ind = [np.arange(10)] *5
+    cond_vec = [np.arange(1,1211)] * 5
+    part_vec = [np.repeat(np.array([1]), 1210)] * 5
+    subj_ind = [np.arange(15)] * 5
 
     # 3. MDTB task
     # data, cond_vec, part_vec, subj_ind = gp.build_data_list(['MDTB'], atlas='fs32k', sess=['all'],
@@ -732,7 +748,9 @@ if __name__ == "__main__":
     # t_data, t_info = load_hcp_contrasts(HCP_DIR, "/subj_list/HCP203_test_set_filtered_1.tsv", space='fs32k',
     #                                     hemis='L', smooth='2_MSMAll')
 
-    t_data, t_info = load_msc_contrasts('MSC', sess='all', subj=None, smooth=2.55)
+    # t_data, t_info = load_msc_contrasts('MSC', sess='all', subj=None, smooth=2.55)
+    t_data, t_info = load_randy_contrasts(ses_id='all', subj=None, hemis='L', smooth=2)
+    t_info["task_name"] = t_info["domain"]
 
     # t_data = load_hcp_timeseries(HCP_DIR, "subj_list/HCP203_test_set_filtered.tsv",
     #                             space=atlas.name, run_list=[2,3],
@@ -829,8 +847,8 @@ if __name__ == "__main__":
             img = nt.make_label_cifti(Pindiv.T.cpu().numpy(), atlas.get_brain_model_axis(),
                                     column_names=[f'subj_{i}' for i in range(Pindiv.shape[0])],
                                     label_names=net_name, label_RGBA=colors)
-            nb.save(img, MODEL_DIR + f'/Models_03/indiv_parcellation/HCP203_test_set' +
-                    f'/asym_HCP800+HCPrest+task-indiv_space-fs32k_K-{K}_{fc_type}_groupstrengh-{p}_spatial-{w}.dlabel.nii')
+            nb.save(img, MODEL_DIR + f'/Models_03/indiv_parcellation/RANDY15_test_set' +
+                    f'/asym_HCP40+RANDYrest-5run-indiv_space-fs32k_K-{K}_{fc_type}_groupstrengh-{p}_spatial-{w}.dlabel.nii')
 
             # Take the test hemisphere
             stru_idx = atlas.structure.index(hemis_dict[test_hemis])
@@ -844,9 +862,9 @@ if __name__ == "__main__":
             Pgroup = Pgroup[atlas.indx_full[stru_idx]]
 
             # Making evaluation information
-            minfo = ge.make_eval_info(K, train_info=['HCP'], train_sess='half-1',
+            minfo = ge.make_eval_info(K, train_info=['RANDY15'], train_sess='half-1',
                                         tdata='HCP', test_sess='contrast',
-                                        model_type='Models_03', group_map_name='HCP800',
+                                        model_type='Models_03', group_map_name='HCP',
                                         test_kappa=None)
             
             t_info['task_name']=[s.rstrip('2') for s in t_info.task_name]
@@ -877,23 +895,24 @@ if __name__ == "__main__":
                     # Individual evaluation
                     # homo_indiv = ev.calc_test_homogeneity(Pindiv, td[:,idx,:])
                     zvalue_indiv = ev.calc_test_zvalue(Pindiv, td[:,idx,:], return_single=False)
-                    np.save(MODEL_DIR + f'/Models_03/indiv_parcellation/HCP203_test_set/zvalues' +
-                            f'/zvalue_indiv_asym_HCP800+HCPrest+task-indiv_K-{K}_strengh-{p}_spatial-{w}.npy',
+                    np.save(MODEL_DIR + f'/Models_03/indiv_parcellation/RANDY15_test_set/zvalues' +
+                            f'/zvalue_indiv_asym_HCP40+RANDYrest-5run-indiv_K-{K}_strengh-{p}_spatial-{w}.npy',
                             zvalue_indiv.cpu().numpy())
                     inhomo_nets = ev.calc_test_task_inhomogeneity(Pindiv, td[:,idx,:], return_single=False)
-                    np.save(MODEL_DIR + f'/Models_03/indiv_parcellation/HCP203_test_set/inhomogeneity' +
-                            f'/inhomo_nets_asym_HCP800+HCPrest+task-indiv_K-{K}_strengh-{p}_spatial-{w}.npy',
+                    inhomo_nets = pt.where(inhomo_nets == 0, pt.nan, inhomo_nets)
+                    np.save(MODEL_DIR + f'/Models_03/indiv_parcellation/RANDY15_test_set/inhomogeneity' +
+                            f'/inhomo_nets_asym_HCP40+RANDYrest-5run-indiv_K-{K}_strengh-{p}_spatial-{w}.npy',
                             inhomo_nets.cpu().numpy())
 
                     inhomo_indiv = ev.calc_test_task_inhomogeneity(Pindiv, td[:,idx,:], return_single=True)
                     dcbc_indiv = ev.calc_test_dcbc(Pindiv, td[:,idx,:], dist, trim_nan=True)
 
-                    res['dcbc_indiv'] = dcbc_indiv.cpu()
+                    res['dcbc_indiv'] = pt.where(dcbc_indiv == 0, pt.nan, dcbc_indiv).cpu().numpy()
                     # res['homo_indiv'] = homo_indiv.cpu()
                     res['inhomo_indiv'] = inhomo_indiv.cpu()
                     res['task_name'] = task
                     res['test_run'] = r + 1
-                    res['train_smooth'] = "4fwhm"
+                    res['train_smooth'] = "2fwhm"
                     res['test_smooth'] = None
                     res['test_type'] = 'Tseries'
                     this_res = pd.concat([this_res, res], ignore_index=True)
@@ -914,7 +933,7 @@ if __name__ == "__main__":
             
             results = pd.concat([results, this_res], ignore_index=True)
 
-    results.to_csv(RES_DIR + f'/eval_HCP800+HCPrest+task_K-{K}_indiv-mRBM_test_on_HCPtask-contrast.tsv',
+    results.to_csv(RES_DIR + f'/eval_HCP40+RANDYrest-5run_K-{K}_indiv-mRBM_test_on_RANDYtask-contrast.tsv',
                    index=False, sep='\t')
     print('Done')
     #     plt.figure(figsize=(20, 8))
