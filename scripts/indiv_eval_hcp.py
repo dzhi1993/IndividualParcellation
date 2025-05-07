@@ -27,15 +27,32 @@ import FusionModel.evaluate as ev
 import group_parcellation as gp
 import group_eval as ge
 import scipy.io as spio
+from pathlib import Path
 from global_config import MODEL_DIR, BASE_DIR, ATLAS_DIR
 # from scripts.dual_regression import model_name
 
-HCP_DIR = '/home/dzhi/eris_mount/Tian/HCP_img'
 hemis_dict = {'L': 'cortex_left', 'R': 'cortex_right'}
+
+HCP_DIR = '/home/dzhi/eris_mount/Tian/HCP_img'
+if not Path(HCP_DIR).exists():
+    HCP_DIR = '/data/tge/Tian/HCP_img'
+if not Path(HCP_DIR).exists():
+    raise (NameError('Could not find hcp_dir'))
+
 RES_DIR = '/home/dzhi/eris_mount/dzhi/Indiv_par/Evaluations'
+if not Path(RES_DIR).exists():
+    RES_DIR = '/data/tge/dzhi/Indiv_par/Evaluations'
+if not Path(RES_DIR).exists():
+    raise (NameError('Could not find hcp_dir'))
+
+ERIS_DIR = '/home/dzhi/eris_mount'
+if not Path(ERIS_DIR).exists():
+    ERIS_DIR = '/data/tge'
+if not Path(ERIS_DIR).exists():
+    raise (NameError('Could not find hcp_dir'))
 
 # pytorch cuda global flag: True - cuda; False - cpu
-pt.cuda.is_available = lambda : True
+pt.cuda.is_available = lambda : False
 if pt.cuda.is_available():
     DEVICE = 'cuda'
 else:
@@ -44,18 +61,18 @@ pt.set_default_device(DEVICE)
 pt.set_default_dtype(pt.float32)
 
 def get_kong2019_17_parcellation():
-    network_names = spio.loadmat('/home/dzhi/eris_mount/dzhi/workspace/CBIG/stable_projects/'
+    network_names = spio.loadmat(ERIS_DIR + '/dzhi/workspace/CBIG/stable_projects/'
                                  'brain_parcellation/Kong2019_MSHBM/lib/'
                                  'group_priors/HCP_40/17network_labels.mat')['network_name']
     network_names = ['???'] + [network_names[0][i][0] for i in range(17)]
 
-    colors = spio.loadmat('/home/dzhi/eris_mount/dzhi/workspace/CBIG/stable_projects/'
+    colors = spio.loadmat(ERIS_DIR + '/dzhi/workspace/CBIG/stable_projects/'
                      'brain_parcellation/Kong2019_MSHBM/lib/'
                      'group_priors/HCP_40/group.mat')['colors']/255
     colors = colors[1:,:]
     colors = np.hstack((colors, np.ones((17, 1))))
     colors = np.vstack((np.zeros(4), colors))
-    KONG2019 = nb.load('/home/dzhi/eris_mount/dzhi/Indiv_par/Kong_2019/group_prior' \
+    KONG2019 = nb.load(ERIS_DIR + '/dzhi/Indiv_par/Kong_2019/group_prior' \
                        '/HCP_40/Kong-2019_MSHBM_HCP40_prob_prior.dscalar.nii').get_fdata()[:]
     
     return KONG2019, network_names, colors
@@ -177,12 +194,12 @@ def eval_parcel_DCBC(U_group, U_indiv, t_data, dist, minfo, out_file=None):
 
     num_subj = t_data.shape[0]
     # Now run the DCBC evaluation fo the group
-    Pgroup = pt.argmax(U_group, dim=0) + 1
-    Pindiv = pt.argmax(U_indiv, dim=1) + 1
+    # Pgroup = pt.argmax(U_group, dim=0) + 1
+    # Pindiv = pt.argmax(U_indiv, dim=1) + 1
     homo_group = ev.calc_test_homogeneity(U_group, t_data)
     homo_indiv = ev.calc_test_homogeneity(U_indiv, t_data)
-    dcbc_group = ev.calc_test_dcbc(Pgroup, t_data, dist)
-    dcbc_indiv = ev.calc_test_dcbc(Pindiv, t_data, dist)
+    dcbc_group = ev.calc_test_dcbc(U_group, t_data, dist)
+    dcbc_indiv = ev.calc_test_dcbc(U_indiv, t_data, dist)
 
     # ------------------------------------------
     # Collect the information from the evaluation
@@ -429,7 +446,7 @@ def build_msc_resting_data(dataset_dir, subj_list, this_at, ses_list='all',
     hemis_dict = {'L': 'cortex_left', 'R': 'cortex_right'}
 
     data = []
-    for i, run_id in enumerate(run_list):
+    for i, run_id in enumerate(ses_list):
         ses_data = []
         for s in T.participant_id:
             # Assemble file name
@@ -470,7 +487,7 @@ def load_randy_contrasts(space='fs32k', ses_id='ses-s1', type=None,
         Data (ndarray): (n_subj, n_contrast, n_voxel) array of data
         info (DataFramw): Data frame with common descriptor
     """
-    dataset = ds.DataSetRANDY15('/home/dzhi/eris_mount/Tian/RANDY15')
+    dataset = ds.DataSetRANDY15(ERIS_DIR + '/Tian/RANDY15')
     T = dataset.get_participants()
     # Deal with subset of subject option
     if subj is None:
@@ -670,6 +687,47 @@ if __name__ == "__main__":
     fc_type = 'CondHalf'
     ext = '_binarized'
     K=15
+
+    fname = MODEL_DIR + f'/Models_03/asym_Hc_space-fs32k_K-15_HCP40subjects_Ico642Run_desc-sm4fwhm_binarized'
+    U, _ = hut.load_group_parcellation(fname, device=DEVICE)
+    dist = futil.load_fs32k_dist(file_type='distGOD_mid_L', hemis='half',
+                                device=DEVICE if pt.cuda.is_available() else 'cpu')
+    minfo = ge.make_eval_info(K, train_info=['RANDY15'], train_sess='half-1',
+                                        tdata='HCP', test_sess='contrast',
+                                        model_type='Models_03', group_map_name='HCP',
+                                        test_kappa=None)
+    stru_idx = atlas.structure.index(hemis_dict[test_hemis])
+    Pgroup = pt.argmax(pt.softmax(U, dim=0), dim=0) + 1
+    Pgroup = Pgroup[atlas.indx_full[stru_idx]]
+    
+    t_data = []
+    for sn in [6,7,8,9,10]:
+        this_data, info, _ = ds.get_dataset(BASE_DIR, 'RANDY15', atlas=atlas.name, sess=f'ses-rest{sn}',
+                                       type='Tseries', subj=None, smooth=None)
+        t_data.append(this_data)
+
+    results = pd.DataFrame()
+    for i, td in enumerate(t_data):
+        if type(td) is np.ndarray:
+                    td = pt.tensor(td, dtype=pt.get_default_dtype())
+
+        for counter_p, p in enumerate([0.5,1,2,3,4,5]):
+            for counter_w, w in enumerate([0,0.5,1,3,5]):
+                print(f'prior strength is {p}; the MRF strength is {w} ...')
+                indiv_par = nb.load(MODEL_DIR + f'/Models_03/indiv_parcellation/RANDY15_test_set' +
+                        f'/asym_HCP40+RANDYrest-5run-indiv_space-fs32k_K-{K}_{fc_type}_groupstrengh-{p}_spatial-{w}.dlabel.nii').get_fdata()
+                Pindiv = indiv_par[:,atlas.indx_full[stru_idx]]
+                Pindiv = pt.tensor(Pindiv, dtype=pt.get_default_dtype())
+
+                res = eval_parcel_DCBC(Pgroup, Pindiv, td[:,:,atlas.indx_full[stru_idx]], dist, minfo,
+                                out_file='eval_dcbc_indiv_Buckner7_k-7_model-04_test.tsv')
+                res['test_run'] = i+1
+                res['strength'] = p
+                res['spatial_w'] = w
+                results = pd.concat([results, res], ignore_index=True)
+    
+    results.to_csv(f'eval_HCP40+RANDYrest-5run_indiv_k-15_test_on_RANDYrest_Tseries.tsv', index=False, sep='\t')
+
 
     ######## Step 1. Load subjects individual training data
     print(f'Start loading data: HCP resting - {training_ses}, {fc_type} {ext} ...')

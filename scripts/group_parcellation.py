@@ -31,10 +31,15 @@ sys.path.append('..')
 from global_config import MODEL_DIR, BASE_DIR, ATLAS_DIR, DEVICE
 
 HCP_DIR = '/data/tge/Tian/HCP_img'
+ERIS_DIR = '/home/dzhi/eris_mount'
+if not Path(ERIS_DIR).exists():
+    ERIS_DIR = '/data/tge'
+if not Path(ERIS_DIR).exists():
+    raise (NameError('Could not find hcp_dir'))
 
 def get_DU15_parcellation(file_name='DU15NET_Prior', atlas_space='fs32k'):
     atlas, _ = am.get_atlas(atlas_space)
-    DU15_dir = '/home/dzhi/eris_mount/dzhi/workspace/DU15NET'
+    DU15_dir = ERIS_DIR + '/dzhi/workspace/DU15NET'
     file = nb.load(DU15_dir + f'/HCP/fsLR_32k/{file_name}_fsLR_32k.dlabel.nii')
     DU15 = atlas.cifti_to_data(file).reshape(-1)
 
