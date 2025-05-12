@@ -10,9 +10,9 @@ import torch as pt
 from pathlib import Path
 
 # pytorch cuda global flag: True - cuda; False - cpu
-pt.cuda.is_available = lambda : False
+pt.cuda.is_available = lambda : True
 if pt.cuda.is_available():
-    DEVICE = 'cuda:1'
+    DEVICE = 'cuda'
 else:
     DEVICE = 'cpu'
 pt.set_default_device(DEVICE)
@@ -21,6 +21,8 @@ pt.set_default_dtype(pt.float32)
 # Find model directory to save model fitting results
 MODEL_DIR = '/data/tge/dzhi/Indiv_par/Models'
 home = str(Path.home())
+if not Path(MODEL_DIR).exists():
+    MODEL_DIR = '/home/dzhi/eris_mount/dzhi/Indiv_par/Models'
 if not Path(MODEL_DIR).exists():
     MODEL_DIR = '/srv/diedrichsen/data/Cerebellum/ProbabilisticParcellationModel/Models'
 if not Path(MODEL_DIR).exists():
@@ -33,6 +35,8 @@ if not Path(MODEL_DIR).exists():
     raise (NameError('Could not find model_dir'))
 
 BASE_DIR = '/data/tge/Tian/UKBB_full/imaging'
+if not Path(BASE_DIR).exists():
+    BASE_DIR = '/home/dzhi/eris_mount/Tian/UKBB_full/imaging'
 if not Path(BASE_DIR).exists():
     BASE_DIR = '/srv/diedrichsen/data/FunctionalFusion'
 if not Path(BASE_DIR).exists():

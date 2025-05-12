@@ -3,9 +3,13 @@ import numpy as np
 import torch as pt
 import matplotlib.pyplot as plt
 import pandas as pd
+import nibabel as nb
 import HierarchBayesParcel.arrangements as ar
+import Functional_Fusion.dataset as ds
+import Functional_Fusion.atlas_map as am
 
 from FusionModel.util import plot_data_flat
+from global_config import MODEL_DIR, BASE_DIR, ATLAS_DIR
 
 def stacker(data_list):
     """
@@ -99,9 +103,6 @@ def convert_hard_to_prob(U, strength=7.0, confidence=None):
     if U.ndim == 1:
         logpi = ar.expand_mn_1d(U, K) * strength
         if confidence is not None:
-            if type(confidence) is np.ndarray:
-                confidence = pt.tensor(confidence, dtype=pt.get_default_dtype())
-
             logpi = logpi * confidence
         # Set parcel 0 to unassigned
         logpi = logpi[1:, :] if np.any(np.unique(U) == 0) else logpi
@@ -154,3 +155,45 @@ def load_batch_best(fname, device=None):
 
     info_reduced = info.iloc[j]
     return info_reduced, best_model
+
+
+def build_resting_data(dataset, space='fs32k', ses_list='all', type='Tseries',
+                       hemis=None, smooth=None):
+    # set up
+    my_dataset = ds.get_dataset_class(BASE_DIR, dataset)
+    T = my_dataset.get_participants()
+    this_at, _ = am.get_atlas(space)
+    this_at.calculate_symmetry()
+    hemis_dict = {'L': 'cortex_left', 'R': 'cortex_right'}
+
+    if ses_list == 'all':
+        ses_list = my_dataset.sessions
+
+    data = []
+    for i, ses_id in enumerate(ses_list):
+        print(f'Loading {ses_id}...')
+        ses_data = []
+        for s in T.participant_id:
+            try:
+                # Load the data
+                if smooth is not None:
+                    C = nb.load(my_dataset.data_dir.format(s)
+                                + f'/{s}_space-{space}_{ses_id}_{type}_desc-sm{smooth}.dscalar.nii')
+                else:
+                    C = nb.load(my_dataset.data_dir.format(s)
+                                + f'/{s}_space-{space}_{ses_id}_{type}.dscalar.nii')
+                dat = C.get_fdata()
+            except FileNotFoundError:
+                dat = np.nan
+            ses_data.append(dat)
+
+        ref_shape = next(m.shape for m in ses_data if isinstance(m, np.ndarray))
+        ses_data = [np.full(ref_shape, np.nan) if not isinstance(m, np.ndarray) else m for m in ses_data]
+        ses_data = np.stack(ses_data)
+
+        if hemis is not None:  # if cortical data
+            stru_idx = this_at.structure.index(hemis_dict[hemis])
+            ses_data = ses_data[:,:,this_at.indx_full[stru_idx]]
+        data.append(ses_data)
+
+    return data

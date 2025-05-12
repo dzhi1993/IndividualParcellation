@@ -28,6 +28,8 @@ import group_parcellation as gp
 import group_eval as ge
 import scipy.io as spio
 from pathlib import Path
+
+import IndividualParcellation.utils as ut
 from global_config import MODEL_DIR, BASE_DIR, ATLAS_DIR
 # from scripts.dual_regression import model_name
 
@@ -52,7 +54,7 @@ if not Path(ERIS_DIR).exists():
     raise (NameError('Could not find hcp_dir'))
 
 # pytorch cuda global flag: True - cuda; False - cpu
-pt.cuda.is_available = lambda : False
+pt.cuda.is_available = lambda : True
 if pt.cuda.is_available():
     DEVICE = 'cuda'
 else:
@@ -688,45 +690,57 @@ if __name__ == "__main__":
     ext = '_binarized'
     K=15
 
-    fname = MODEL_DIR + f'/Models_03/asym_Hc_space-fs32k_K-15_HCP40subjects_Ico642Run_desc-sm4fwhm_binarized'
-    U, _ = hut.load_group_parcellation(fname, device=DEVICE)
-    dist = futil.load_fs32k_dist(file_type='distGOD_mid_L', hemis='half',
-                                device=DEVICE if pt.cuda.is_available() else 'cpu')
-    minfo = ge.make_eval_info(K, train_info=['RANDY15'], train_sess='half-1',
-                                        tdata='HCP', test_sess='contrast',
-                                        model_type='Models_03', group_map_name='HCP',
-                                        test_kappa=None)
-    stru_idx = atlas.structure.index(hemis_dict[test_hemis])
-    Pgroup = pt.argmax(pt.softmax(U, dim=0), dim=0) + 1
-    Pgroup = Pgroup[atlas.indx_full[stru_idx]]
-    
-    t_data = []
-    for sn in [6,7,8,9,10]:
-        this_data, info, _ = ds.get_dataset(BASE_DIR, 'RANDY15', atlas=atlas.name, sess=f'ses-rest{sn}',
-                                       type='Tseries', subj=None, smooth=None)
-        t_data.append(this_data)
-
-    results = pd.DataFrame()
-    for i, td in enumerate(t_data):
-        if type(td) is np.ndarray:
-                    td = pt.tensor(td, dtype=pt.get_default_dtype())
-
-        for counter_p, p in enumerate([0.5,1,2,3,4,5]):
-            for counter_w, w in enumerate([0,0.5,1,3,5]):
-                print(f'prior strength is {p}; the MRF strength is {w} ...')
-                indiv_par = nb.load(MODEL_DIR + f'/Models_03/indiv_parcellation/RANDY15_test_set' +
-                        f'/asym_HCP40+RANDYrest-5run-indiv_space-fs32k_K-{K}_{fc_type}_groupstrengh-{p}_spatial-{w}.dlabel.nii').get_fdata()
-                Pindiv = indiv_par[:,atlas.indx_full[stru_idx]]
-                Pindiv = pt.tensor(Pindiv, dtype=pt.get_default_dtype())
-
-                res = eval_parcel_DCBC(Pgroup, Pindiv, td[:,:,atlas.indx_full[stru_idx]], dist, minfo,
-                                out_file='eval_dcbc_indiv_Buckner7_k-7_model-04_test.tsv')
-                res['test_run'] = i+1
-                res['strength'] = p
-                res['spatial_w'] = w
-                results = pd.concat([results, res], ignore_index=True)
-    
-    results.to_csv(f'eval_HCP40+RANDYrest-5run_indiv_k-15_test_on_RANDYrest_Tseries.tsv', index=False, sep='\t')
+    # fname = MODEL_DIR + f'/Models_03/asym_Hc_space-fs32k_K-15_HCP40subjects_Ico642Run_desc-sm4fwhm_binarized'
+    # U, _ = hut.load_group_parcellation(fname, device=DEVICE)
+    # dist = futil.load_fs32k_dist(file_type=f'distGOD_mid_{test_hemis}', hemis='half',
+    #                             device=DEVICE if pt.cuda.is_available() else 'cpu')
+    # minfo = ge.make_eval_info(K, atlas='fs32k', train_info=['RANDY15'], train_sess='half-1', tdata='HCP',
+    #                           test_sess='contrast', model_type='Models_03', group_map_name='HCP', test_kappa=None)
+    # stru_idx = atlas.structure.index(hemis_dict[test_hemis])
+    # Pgroup = pt.argmax(pt.softmax(U, dim=0), dim=0) + 1
+    # Pgroup = Pgroup[atlas.indx_full[stru_idx]]
+    #
+    # # t_data = []
+    # # for sn in [6,7,8,9,10]:
+    # #     this_data, info, _ = ds.get_dataset(BASE_DIR, 'RANDY15', atlas=atlas.name, sess=f'ses-rest{sn}',
+    # #                                    type='Tseries', subj=None, smooth=None)
+    # #     t_data.append(this_data)
+    #
+    # t_data, t_info = load_randy_contrasts(ses_id='all', subj=None, hemis=None, smooth=2)
+    # t_info["task_name"] = t_info["domain"]
+    #
+    # results = pd.DataFrame()
+    # for i, td in enumerate(t_data):
+    #     if type(td) is np.ndarray:
+    #                 td = pt.tensor(td, dtype=pt.get_default_dtype())
+    #
+    #     for counter_p, p in enumerate([0.5]):
+    #         for counter_w, w in enumerate([0]):
+    #             print(f'prior strength is {p}; the MRF strength is {w} ...')
+    #             indiv_par = nb.load(MODEL_DIR + f'/Models_03/indiv_parcellation/RANDY15_test_set' +
+    #                     f'/asym_Ra-5run-indiv_space-fs32k_K-15_CondHalf_arrange-independent.dlabel.nii').get_fdata()
+    #             # Pindiv = indiv_par[:,atlas.indx_full[stru_idx]]
+    #             Pindiv = pt.tensor(indiv_par, dtype=pt.get_default_dtype())
+    #
+    #             # res = eval_parcel_DCBC(Pgroup, Pindiv, td[:,:,atlas.indx_full[stru_idx]], dist, minfo,
+    #             #                 out_file='eval_dcbc_indiv_Buckner7_k-7_model-04_test.tsv')
+    #
+    #             zvalue_indiv = ev.calc_test_zvalue(Pindiv, td, return_single=False)
+    #             np.save(MODEL_DIR + f'/Models_03/indiv_parcellation/RANDY15_test_set/zvalues' +
+    #                     f'/zvalue_indiv_asym_Ra-5run-indiv_K-{K}.npy',
+    #                     zvalue_indiv.cpu().numpy())
+    #             inhomo_nets = ev.calc_test_task_inhomogeneity(Pindiv, td, return_single=False)
+    #             inhomo_nets = pt.where(inhomo_nets == 0, pt.nan, inhomo_nets)
+    #             np.save(MODEL_DIR + f'/Models_03/indiv_parcellation/RANDY15_test_set/inhomogeneity' +
+    #                     f'/inhomo_nets_asym_Ra-5run-indiv_K-{K}.npy',
+    #                     inhomo_nets.cpu().numpy())
+    #
+    #             res['test_run'] = i+1
+    #             # res['strength'] = p
+    #             # res['spatial_w'] = w
+    #             # results = pd.concat([results, res], ignore_index=True)
+    #
+    # results.to_csv(f'eval_HCP40+RANDYrest-5run_indiv_k-15_test_on_RANDYrest_Tseries.tsv', index=False, sep='\t')
 
 
     ######## Step 1. Load subjects individual training data
@@ -766,11 +780,14 @@ if __name__ == "__main__":
 
     # 3. RANDY15
     ## Randy 15 resting-state
-    data = []
-    for sn in [1,2,3,4,5]:
-        this_data, info, _ = ds.get_dataset(BASE_DIR, 'RANDY15', atlas=atlas.name, sess=f'ses-rest{sn}',
-                                       type='Ico642Run', subj=None, smooth=None)
-        data.append(this_data)
+    # data = []
+    # for sn in [1,2,3,4,5]:
+    #     this_data, info, _ = ds.get_dataset(BASE_DIR, 'RANDY15', atlas=atlas.name, sess=f'ses-rest{sn}',
+    #                                    type='Ico642Run', subj=None, smooth=None)
+    #     data.append(this_data)
+    data = ut.build_resting_data('RANDY15', space='fs32k', ses_list=[f'ses-rest{sn}' for sn in range(1,25)],
+                              type='Ico642Run', hemis=None, smooth=None)
+
 
     # data, info, _ = ds.get_dataset(BASE_DIR, 'MSC', atlas=atlas.name, sess='ses-task',
     #                                    type='CondRun', subj=None, smooth=None)
@@ -867,17 +884,17 @@ if __name__ == "__main__":
     group_evaluation = []
     results = pd.DataFrame()
     # p = 1,30,60,90,120; w = 0,30,60,90,120
-    for counter_p, p in enumerate([0.5,1,2,3,4,5]):
-        for counter_w, w in enumerate([0,0.5,1,3,5]):
+    for counter_p, p in enumerate([0.01,0.1,1,10,100]):
+        for counter_w, w in enumerate([0]):
             print(f'prior strength is {p}; the MRF strength is {w} ...')
             # m-RBM
-            ar_model = ar.build_arrangement_model(U*p, prior_type='logpi', atlas=atlas,
-                                                sym_type='asym', model_type='cRBM_Wc',
-                                                Wc=Wc, theta=w, epos_iter=20, num_chain=n_subj)
+            # ar_model = ar.build_arrangement_model(U*p, prior_type='logpi', atlas=atlas,
+            #                                     sym_type='asym', model_type='cRBM_Wc',
+            #                                     Wc=Wc, theta=w, epos_iter=20, num_chain=n_subj)
 
             # Independent
-            # ar_model = ar.build_arrangement_model(U*p, prior_type='logpi', atlas=atlas,
-            #                                       sym_type='asym', model_type='independent')
+            ar_model = ar.build_arrangement_model(U*p, prior_type='logpi', atlas=atlas,
+                                                  sym_type='asym', model_type='independent')
             
             U_indiv, _, M = fm.get_indiv_parcellation(ar_model, atlas, data,
                                                     cond_vec, part_vec, subj_ind, Vs=None,
@@ -906,7 +923,7 @@ if __name__ == "__main__":
                                     column_names=[f'subj_{i}' for i in range(Pindiv.shape[0])],
                                     label_names=net_name, label_RGBA=colors)
             nb.save(img, MODEL_DIR + f'/Models_03/indiv_parcellation/RANDY15_test_set' +
-                    f'/asym_HCP40+RANDYrest-5run-indiv_space-fs32k_K-{K}_{fc_type}_groupstrengh-{p}_spatial-{w}.dlabel.nii')
+                    f'/asym_HCP40+RANDYrest-5run-indiv_space-fs32k_K-{K}_{fc_type}_arr-independent_groupstrengh-{p}.dlabel.nii')
 
             # Take the test hemisphere
             stru_idx = atlas.structure.index(hemis_dict[test_hemis])
@@ -921,7 +938,7 @@ if __name__ == "__main__":
 
             # Making evaluation information
             minfo = ge.make_eval_info(K, train_info=['RANDY15'], train_sess='half-1',
-                                        tdata='HCP', test_sess='contrast',
+                                        tdata='RANDY', test_sess='contrast',
                                         model_type='Models_03', group_map_name='HCP',
                                         test_kappa=None)
             
@@ -954,12 +971,12 @@ if __name__ == "__main__":
                     # homo_indiv = ev.calc_test_homogeneity(Pindiv, td[:,idx,:])
                     zvalue_indiv = ev.calc_test_zvalue(Pindiv, td[:,idx,:], return_single=False)
                     np.save(MODEL_DIR + f'/Models_03/indiv_parcellation/RANDY15_test_set/zvalues' +
-                            f'/zvalue_indiv_asym_HCP40+RANDYrest-5run-indiv_K-{K}_strengh-{p}_spatial-{w}.npy',
+                            f'/zvalue_indiv_asym_HCP40+RANDYrest-5run-indiv_K-{K}_arr-independent_strengh-{p}.npy',
                             zvalue_indiv.cpu().numpy())
                     inhomo_nets = ev.calc_test_task_inhomogeneity(Pindiv, td[:,idx,:], return_single=False)
                     inhomo_nets = pt.where(inhomo_nets == 0, pt.nan, inhomo_nets)
                     np.save(MODEL_DIR + f'/Models_03/indiv_parcellation/RANDY15_test_set/inhomogeneity' +
-                            f'/inhomo_nets_asym_HCP40+RANDYrest-5run-indiv_K-{K}_strengh-{p}_spatial-{w}.npy',
+                            f'/inhomo_nets_asym_HCP40+RANDYrest-5run-indiv_K-{K}_arr-independent_strengh-{p}.npy',
                             inhomo_nets.cpu().numpy())
 
                     inhomo_indiv = ev.calc_test_task_inhomogeneity(Pindiv, td[:,idx,:], return_single=True)
@@ -991,7 +1008,7 @@ if __name__ == "__main__":
             
             results = pd.concat([results, this_res], ignore_index=True)
 
-    results.to_csv(RES_DIR + f'/eval_HCP40+RANDYrest-5run_K-{K}_indiv-mRBM_test_on_RANDYtask-contrast.tsv',
+    results.to_csv(RES_DIR + f'/eval_HCP40+RANDYrest-5run_K-{K}_indiv-independent_test_on_RANDYtask-contrast.tsv',
                    index=False, sep='\t')
     print('Done')
     #     plt.figure(figsize=(20, 8))
