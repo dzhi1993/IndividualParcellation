@@ -7,6 +7,8 @@ Author: dzhi
 """
 from time import gmtime
 from pathlib import Path
+
+import mat73
 import pandas as pd
 import numpy as np
 import Functional_Fusion.atlas_map as am
@@ -18,6 +20,7 @@ import HierarchBayesParcel.spatial as sp
 import HierarchBayesParcel.arrangements as ar
 import HierarchBayesParcel.emissions as em
 import HierarchBayesParcel.evaluation as ev
+import HierarchBayesParcel.util as hut
 import torch as pt
 import matplotlib.pyplot as plt
 import pickle, time
@@ -524,7 +527,6 @@ def build_hcp_datasets(dataset_dir, subj_list, this_at, ses_list=['ses-rest1'],
     '''
     # Step 1: Build the data into list of 3d tensor
     T = pd.read_csv(dataset_dir + f'/{subj_list}', sep='\t')
-    T = T.iloc[0:20]
     data_dir = dataset_dir + '/derivatives/{0}/data'
     hemis_dict = {'L': 'cortex_left', 'R': 'cortex_right'}
     space = this_at.name
@@ -612,7 +614,9 @@ def load_hcp_timeseries(dataset_dir, subj_list, this_at, run_list=[0,1,2,3],
 
     # Step 1: Build the data into list of 3d tensor
     T = pd.read_csv(dataset_dir + f'/{subj_list}', sep='\t')
-    
+    B = pd.read_csv(f'/home/dzhi/eris_mount/Tian/HCP_img/subj_list/HCP40_training_KONG2019.tsv', delimiter='\t')
+    T = T[~T['participant_id'].isin(B['participant_id'])]
+
     data_dir = dataset_dir + '/rfMRI/fix_32k/{0}'
     hemis_dict = {'L': 'cortex_left', 'R': 'cortex_right'}
     
@@ -824,25 +828,99 @@ if __name__ == "__main__":
     
 
     ###### Convert result to label cifti
-    atlas, _ = am.get_atlas('fs32k')
-    network_names = spio.loadmat('/data/tge/dzhi/workspace/CBIG/stable_projects/'
-                                 'brain_parcellation/Kong2019_MSHBM/lib/'
-                                 'group_priors/HCP_40/17network_labels.mat')['network_name']
-    network_names = ['???'] + [network_names[0][i][0] for i in range(17)]
+    # atlas, _ = am.get_atlas('fs32kAsym')
+    # data = mat73.loadmat('/home/dzhi/eris_mount/dzhi/projects/RANDY15/HCP_avg_40sub/avg_40sub_avg4runs_900sphere_cen_sm4_profile.mat')['profile_mat'].T
+    # data = data[np.newaxis, :, np.concat(atlas.vertex_mask)]
+    # cond_vec = np.arange(1,1484)
+    # part_vec = np.repeat(np.array([1]), 1483)
+    # # Build spatial arrangement model
+    # ar_model = ar.ArrangeIndependent(15, atlas.P, spatial_specific=True,
+    #                                  remove_redundancy=False)
+    # # Build emission models for each dataset
+    # em_params = {'uniform_kappa': True,
+    #              'subjects_equal_weight': True,
+    #              'subject_specific_kappa': False,
+    #              'parcel_specific_kappa': True}
+    # em_model = em.MixVMF(K=15, P=atlas.P, X=hut.indicator(cond_vec),
+    #                           part_vec=part_vec, **em_params)
+    # M = fm.FullMultiModel(ar_model, [em_model])
+    #
+    # # Iterate over the number of fits
+    # n_fits = 100
+    # n_iter = 1000
+    # ll = np.empty((n_fits, n_iter))
+    # tt = np.empty((n_fits, n_iter))
+    # models=[]
+    # info = pd.DataFrame({'name': ['asym_Hc'] * n_fits,
+    #                      'atlas': ['fs32kAsym'] * n_fits,
+    #                      'K': [15] * n_fits,
+    #                      'datasets': ['HCP_avrg'] * n_fits,
+    #                      'sess': ['avrg'] * n_fits,
+    #                      'type': ['ROI1483'] * n_fits,
+    #                      'smooth': [None] * n_fits,
+    #                      'subj': [40] * n_fits,
+    #                      'arrange': ['independent'] * n_fits,
+    #                      'emission': ['VMF'] * n_fits,
+    #                      'loglik': [np.nan] * n_fits,
+    #                      'weighting': [None] * n_fits})
+    # for i in range(n_fits):
+    #     print(f'Start fit: repetition {i}')
+    #
+    #     iter_tic = time.perf_counter()
+    #     # Copy the object (without data)
+    #     m = deepcopy(M)
+    #     # Attach the data
+    #     m.initialize([data], subj_ind='separate')
+    #     pt.cuda.empty_cache()
+    #     hut.report_cuda_memory()
+    #
+    #     # Swith the learning process between independent and RBMs
+    #     m, ll, _, _, _ = m.fit_em_ninits(
+    #         iter=n_iter,
+    #         tol=0.01,
+    #         fit_arrangement=True,
+    #         fit_emission=True,
+    #         init_arrangement=True,
+    #         init_emission=True,
+    #         n_inits=50,
+    #         first_iter=10, verbose=False)
+    #
+    #     info.loglik.at[i] = ll[-1].cpu().numpy()  # Convert to numpy
+    #     m.clear()
+    #
+    #     # Move to CPU device before storing
+    #     m.move_to(device='cpu')
+    #     models.append(m)
+    #     pt.cuda.empty_cache()
+    #
+    #     print(f'Done fit: repetition {i}!')
+    #
+    # models = np.array(models, dtype=object)
+    #
+    # wdir = '/home/dzhi/eris_mount/dzhi/Indiv_par/Models/Models_04'
+    # fname = f'/asym_Hc_space-fs32kAsym_K-15_arrange-independent_HCP40-avrg'
+    # info.to_csv(wdir + fname + '.tsv', sep='\t')
+    # with open(wdir + fname + '.pickle', 'wb') as file:
+    #     pickle.dump(models, file)
 
-    colors = spio.loadmat('/data/tge/dzhi/workspace/CBIG/stable_projects/'
-                     'brain_parcellation/Kong2019_MSHBM/lib/'
-                     'group_priors/HCP_40/group.mat')['colors']/255
-    colors = colors[1:,:]
-    colors = np.hstack((colors, np.ones((17, 1))))
-    colors = np.vstack((np.zeros(4), colors))
-    KONG2019 = atlas.cifti_to_data('/data/tge/dzhi/Indiv_par/Kong_2019/group_prior' \
-                       '/HCP_40/Kong-2019_MSHBM_HCP40_prob_prior.dscalar.nii')[:]
+    # network_names = spio.loadmat('/data/tge/dzhi/workspace/CBIG/stable_projects/'
+    #                              'brain_parcellation/Kong2019_MSHBM/lib/'
+    #                              'group_priors/HCP_40/17network_labels.mat')['network_name']
+    # network_names = ['???'] + [network_names[0][i][0] for i in range(17)]
+    #
+    # colors = spio.loadmat('/data/tge/dzhi/workspace/CBIG/stable_projects/'
+    #                  'brain_parcellation/Kong2019_MSHBM/lib/'
+    #                  'group_priors/HCP_40/group.mat')['colors']/255
+    # colors = colors[1:,:]
+    # colors = np.hstack((colors, np.ones((17, 1))))
+    # colors = np.vstack((np.zeros(4), colors))
+    # KONG2019 = atlas.cifti_to_data('/data/tge/dzhi/Indiv_par/Kong_2019/group_prior' \
+    #                    '/HCP_40/Kong-2019_MSHBM_HCP40_prob_prior.dscalar.nii')[:]
 
     DU15, network_names, colors = get_DU15_parcellation(file_name='DU15NET_Prior', atlas_space='fs32k')
     DU15 = ar.expand_mn_1d(DU15, K=16)
-    fname = f'Models_03/task_fusion/asym_MdPoNiIbWmDeSo_space-fs32k_K-15_arrange-cRBM_Wc-0.0_sm6fwhm_zstat_masked-hi0.1lo0.1'
-    ut.write_model_to_labelcifti([fname], align=DU15[1:,:], col_names=[f'7taskfusion-17NET'],
+    fname = f'Models_03/asym_Hc_space-fs32k_K-15_HCP40-Kong_ROI1483Run_sm6fwhm_binarized'
+    ut.write_model_to_labelcifti([fname], align=DU15[1:,:].cpu().numpy(), col_names=[f'HCP40-15NET'],
                                     label_names=network_names, label_RGBA=colors,
                                     load='best', oname=fname, device=DEVICE)
 

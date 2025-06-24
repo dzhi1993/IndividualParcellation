@@ -21,9 +21,11 @@ import HierarchBayesParcel.arrangements as ar
 import HierarchBayesParcel.emissions as em
 import HierarchBayesParcel.full_model as fm
 import HierarchBayesParcel.evaluation as hev
-import HierarchBayesParcel.util as ut
+import HierarchBayesParcel.util as hut
 import FusionModel.util as futil
 import FusionModel.evaluate as ev
+import group_parcellation as gp
+import utils as ut
 
 from group_parcellation import build_ukb_datasets, build_hcp_datasets, load_hcp_timeseries, load_hcp_task_contrast
 from global_config import MODEL_DIR, BASE_DIR, ATLAS_DIR
@@ -114,11 +116,11 @@ def eval_group_DCBC(U_group, t_data, dist, minfo, subj_list=None):
 
     num_subj = t_data.shape[0]
     # Now run the DCBC evaluation fo the group
-    zvalue_group = ev.calc_test_zvalue(U_group, t_data, return_single=False)
+    # zvalue_group = ev.calc_test_zvalue(U_group, t_data, return_single=False)
     dcbc_group = ev.calc_test_dcbc(U_group, t_data, dist, trim_nan=True)
-    inhomo_group = ev.calc_test_task_inhomogeneity(U_group, t_data,
-                                                   return_single=True)
-    # homo_group = ev.calc_test_homogeneity(U_group, t_data)
+    # inhomo_group = ev.calc_test_task_inhomogeneity(U_group, t_data,
+    #                                                return_single=True)
+    homo_group = ev.calc_test_homogeneity(U_group, t_data)
 
     # ------------------------------------------
     # Collect the information from the evaluation
@@ -135,9 +137,9 @@ def eval_group_DCBC(U_group, t_data, dist, minfo, subj_list=None):
                           'indiv_test_kappa': [minfo.indiv_test_kappa] * num_subj})
     # Add all the evaluations to the data frame
     ev_df['dcbc_group'] = dcbc_group.cpu()
-    # ev_df['homo_group'] = homo_group.cpu()
-    ev_df['inhomo_group'] = inhomo_group.cpu()
-    ev_df['zvalue_group'] = zvalue_group.cpu()
+    ev_df['homo_group'] = homo_group.cpu()
+    # ev_df['inhomo_group'] = inhomo_group.cpu()
+    # ev_df['zvalue_group'] = zvalue_group.cpu()
 
     return ev_df
 
@@ -506,10 +508,9 @@ def eval_HCP_group_parcellation(parcels, names, space='fs32k', test_ses='all', K
         atlas.calculate_symmetry()
     else:
         raise NameError('Unrecognized `space` for atlasing!')
-    
-    dist = futil.load_fs32k_dist(file_type='distGOD_sp', hemis=hemis,
-                                  device=DEVICE if pt.cuda.is_available() else 'cpu')
-    
+
+    dist = futil.load_fs32k_dist(file_type=f'distGOD_mid_{hem}', hemis='half',
+                                 device=DEVICE if pt.cuda.is_available() else 'cpu')
     ## Load HCP subjects test data
     print(f'Start loading data: HCP {space} resting - Tseries ...')
     tic = time.perf_counter()
@@ -520,9 +521,12 @@ def eval_HCP_group_parcellation(parcels, names, space='fs32k', test_ses='all', K
     
     # t_data = load_hcp_timeseries(HCP_DIR, subj_list, atlas, run_list=[out_file],
     #                             type='Tseries', hemis=hem, smooth=test_smooth)
-    from indiv_eval_hcp import load_hcp_contrasts
-    t_data, t_info = load_hcp_contrasts(HCP_DIR, subj_list, space=atlas.name,
-                                        hemis=hem, smooth='2_MSMAll')
+    # from indiv_eval_hcp import load_hcp_contrasts
+    # t_data, t_info = load_hcp_contrasts(HCP_DIR, subj_list, space=atlas.name,
+    #                                     hemis=hem, smooth='2_MSMAll')
+    t_data = ut.build_resting_data('RANDY15', space='fs32k',
+                                            ses_list=[f'ses-rest{i}' for i in range(1,11)],
+                                            type='Tseries', subj=None, hemis=hem, smooth=None)
     toc = time.perf_counter()
     print(f'Done loading. Used {toc - tic:0.4f} seconds!')
     
@@ -535,7 +539,7 @@ def eval_HCP_group_parcellation(parcels, names, space='fs32k', test_ses='all', K
         ######## Step 3: Evaluate individual maps using DCBC
         # Step 3.2: Gatering all necessary information for evaluation
         eval_info = make_eval_info(K[i], atlas=space, train_info=['group_train'], train_sess='all',
-                                    tdata='HCP_test', test_sess=None, 
+                                    tdata='RANDY15_test', test_sess=None,
                                     model_type='Models_03', group_map_name=names[i],
                                     test_kappa=None)
         for r, td in enumerate(t_data):
@@ -545,10 +549,10 @@ def eval_HCP_group_parcellation(parcels, names, space='fs32k', test_ses='all', K
             res['test_run'] = r
             res['train_smooth'] = train_smooth[i]
             res['test_smooth'] = test_smooth
-            res['test_type'] = 'contrast'
+            res['test_type'] = 'rs-Tseries'
             results = pd.concat([results, res], ignore_index=True)
     
-    results.to_csv(f'/home/dzhi/eris_mount/dzhi/Indiv_par/Evaluations/eval_group-7taskfusion-random_K-10-30_sm6-masked_on-HCP203test-task-contrast.tsv',
+    results.to_csv(f'/home/dzhi/eris_mount/dzhi/Indiv_par/Evaluations/eval_group_DU_vs_HBP_K-15_on-RANDY15test-rsTseries-10run_hemis-{hem}_new.tsv',
                     index=False, sep='\t')
     
 
@@ -615,7 +619,7 @@ def make_rand_par_L(K, num_parcellation=100, mesh='sphere'):
     # Generate 100 random parcellation given the resolution
     rand_par, names = [], []
     for i in range(num_parcellation):
-        this_par = ut.make_random_parcellation(K, surf_file_L, mask_file_L)
+        this_par = hut.make_random_parcellation(K, surf_file_L, mask_file_L)
         this_par = this_par[atlas.vertex_mask[0]]
         rand_par.append(this_par)
         names.append(f'random_K-{K}_{i+1}')
@@ -627,6 +631,8 @@ if __name__ == "__main__":
     #     print("Usage: python group_eval.py <K> <i>")
     #     sys.exit(1)
 
+    atlas, _ = am.get_atlas('fs32k_R')
+    RES_DIR = '/home/dzhi/eris_mount/dzhi/Indiv_par/Models/Models_03'
     results = pd.DataFrame()
     parcels, names, n_parcels = load_existing_atlas()
     smoothes = [0] * len(parcels)
@@ -656,7 +662,14 @@ if __name__ == "__main__":
     #     n_parcels += [K] * len(pars)
     #     smoothes += [0] * len(pars)
 
-
+    # DU15, net_name, colors = gp.get_DU15_parcellation(file_name='DU15NET_Prior', atlas_space='fs32k_R')
+    # HBP_15_rest = atlas.cifti_to_data(RES_DIR + '/asym_Hc_space-fs32k_K-15_HCP40-Kong_Ico642Run_desc-sm4fwhm_binarized.dlabel.nii').reshape(-1)
+    # HBP_15_HcMd = atlas.cifti_to_data(RES_DIR + '/task_fusion/asym_MdHc_space-fs32k_K-15_arrange-independent_sm6fwhm_zstat_masked-hi0.1lo0.1.dlabel.nii').reshape(-1)
+    HBP_15_Hc = atlas.cifti_to_data(RES_DIR + '/asym_Hc_space-fs32k_K-15_HCP40-Kong_ROI1483Run_sm6fwhm_binarized_all.dlabel.nii')
+    parcels = [HBP_15_Hc[i] for i in range(HBP_15_Hc.shape[0])]
+    names = [f'HBP15_HCP40_ROI1483_iter{i}' for i in range(HBP_15_Hc.shape[0])]
+    n_parcels = [15] * len(parcels)
+    smoothes = [0] * len(parcels)
 
     ### Evaluation on the task-based datasets
     # dat1, info1, _ = ds.get_dataset(BASE_DIR, 'MDTB', atlas=atlas.name, sess='ses-s1',
@@ -686,8 +699,9 @@ if __name__ == "__main__":
     #                 index=False, sep='\t')
 
     ### Evaluation on the HCP resting-state data
-    eval_HCP_group_parcellation(parcels, names, space='fs32k_L', K=n_parcels, train_smooth=smoothes,
-                                test_smooth=None, subj_list=f'/subj_list/HCP203_test_set_filtered_1.tsv', out_file=1)
+    for r in [0,1,2,3]:
+        eval_HCP_group_parcellation(parcels, names, space='fs32k_R', K=n_parcels, train_smooth=smoothes,
+                                    test_smooth=None, subj_list=f'/subj_list/HCP203_test_set_filtered.tsv', out_file=r)
 
     ## Plot results
     results = pd.read_csv(f'/home/dzhi/eris_mount/dzhi/Indiv_par/Evaluations/eval_group-random_K-10-30_sm6-masked_on-MSC-task-contrasts.tsv', sep='\t')

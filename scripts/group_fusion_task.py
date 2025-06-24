@@ -26,8 +26,11 @@ import pickle
 from copy import deepcopy
 import time
 import FusionModel.util as ut
+from utils import get_kong2019_group_parcellation
 
 GROUP_DIR = '/data/tge/Tian/HCP_img/derivatives/group'
+KONG2019, _, _ = get_kong2019_group_parcellation()
+KONG2019 = pt.tensor(KONG2019, dtype=pt.get_default_dtype())
 
 def build_data_list(datasets, atlas='MNISymC3', sess=None, cond_ind=None, type=None,
                     part_ind=None, part_num=None, subj=None, join_sess=True,
@@ -83,8 +86,8 @@ def build_data_list(datasets, atlas='MNISymC3', sess=None, cond_ind=None, type=N
             part_ind[i] = ds.part_ind
         # Make different sessions either the same or different
         if join_sess:
-            if part_num is not None:
-                indx = info[part_ind[i]] == part_num
+            if part_num[i] is not None:
+                indx = info[part_ind[i]] == part_num[i]
             else:
                 indx = np.full(info[part_ind[i]].shape, True)
             # Check if we want to set no partition after join sessions
@@ -102,26 +105,34 @@ def build_data_list(datasets, atlas='MNISymC3', sess=None, cond_ind=None, type=N
             else:
                 sessions = sess[i]
             # Now build and split across the correct sessions:
+            indices = []
             for s in sessions:
-                if part_num is None:
+                if part_num[i] is None:
                     indx = info.sess == s
+                    indices.append(indx)
                 else:
-                    indx = (info.sess == s) & (info[part_ind[i]] == part_num)
+                    for parts in part_num[i]:
+                        indx = (info.sess == s) & (info[part_ind[i]] == parts)
+                        indices.append(indx)
 
+            for indx in indices:
                 this_dat = dat[:, indx, :]
                 this_cond_vec = info[cond_ind[i]].values[indx].reshape(-1, )
                 this_part_vec = info[part_ind[i]].values[indx].reshape(-1, )
 
                 # QC
-                rw = rel.within_subj(np.nan_to_num(this_dat), cond_vec=this_cond_vec, part_vec=this_part_vec,
-                                     separate='condition_wise', subtract_mean=True)
-                cond_mask = np.where(rw <= 0.5, False, True)
-                cond_mask = np.hstack((cond_mask, cond_mask.copy()))
-                this_dat[~cond_mask, :] = np.nan
+                # rw = rel.within_subj(np.nan_to_num(this_dat), cond_vec=this_cond_vec, part_vec=this_part_vec,
+                #                      separate='condition_wise', subtract_mean=True)
+                # cond_mask = np.where(rw <= 0.5, False, True)
+                # cond_mask = np.hstack((cond_mask, cond_mask.copy()))
+                # this_dat[~cond_mask, :] = np.nan
 
-                print(f'{datasets[i]} session {s} - data drop {np.sum(~cond_mask)/2} conditions from {n_subj} subjects at cut-off > 0.5' )
-                print(f'{np.sum(~cond_mask)}/{cond_mask.size} contrasts, drop rate {np.sum(~cond_mask)/cond_mask.size}')
-                data.append(this_dat)
+                # print(f'{datasets[i]} session {s} - data drop {np.sum(~cond_mask)/2} conditions from {n_subj} subjects at cut-off > 0.5' )
+                # print(f'{np.sum(~cond_mask)}/{cond_mask.size} contrasts, drop rate {np.sum(~cond_mask)/cond_mask.size}')
+
+                # Make the zero voxels to nan
+                zero_cols = np.all(this_dat == 0, axis=1, keepdims=True)
+                data.append(np.where(zero_cols, np.nan, this_dat))
                 # indx = pt.tensor(np.where(idx == True)[0])
                 # data.append(pt.index_select(dat, 1, indx))
                 cond_vec.append(this_cond_vec)
@@ -267,6 +278,12 @@ def batch_fit(datasets, sess,
     print(f'Done loading. Used {toc - tic:0.4f} seconds!')
     # data = [pt.tensor(dat, dtype=pt.int8).to_sparse() for dat in data]
 
+    # data = mat73.loadmat('/home/dzhi/eris_mount/dzhi/projects/RANDY15/HCP_avg_40sub/avg_40sub_avg4runs_900sphere_cen_sm4_profile.mat')['profile_mat'].T
+    # data = np.split(data[0], 2, axis=1) + np.split(data[1], 2, axis=1)
+    # cond_vec = [np.arange(1,1484)] * 4
+    # part_vec = [np.repeat(np.array([1]), 1483)] * 4
+    # subj_ind = [np.arange(20)] * 4
+
     # Load all necessary data and designs
     n_subj = np.unique(np.concatenate(subj_ind, axis=0)).size
     if hemis == 'L':
@@ -292,6 +309,7 @@ def batch_fit(datasets, sess,
     M = build_model(K, arrange, sym_type, emission, atlas, cond_vec,
                     part_vec, weighting=weighting, Wc=Wc, theta=Wc_theta,
                     num_chain=n_subj, sess=sess, em_params={'num_subj': n_subj, **em_params})
+    weights = pt.ones(len(data)) / len(data)
 
     del Wc
     pt.cuda.empty_cache()
@@ -325,6 +343,8 @@ def batch_fit(datasets, sess,
         m = deepcopy(M)
         # Attach the data
         m.initialize(data, subj_ind=subj_ind)
+        m.ds_weight = weights
+        # m.arrange.logpi = pt.log(KONG2019 + 1e-10)
         pt.cuda.empty_cache()
         hut.report_cuda_memory()
 
@@ -411,8 +431,10 @@ def fit_all(set_ind=[0, 1, 2, 3], K=10, repeats=100, model_type='01',
             sess[idx] = this_sess[i]
 
     type = T.default_type.to_numpy()
-    type[7] = 'Ico642Run'
+    type[7] = 'ROI1483Run'
+    type[13] = 'Ico642Run'
     cond_ind = T.default_cond_ind.to_numpy()
+    cond_ind[13] = 'net_id'
     part_ind = np.array(['half'] * len(T), dtype=object)
 
     # Make the atlas object
@@ -477,7 +499,7 @@ def fit_all(set_ind=[0, 1, 2, 3], K=10, repeats=100, model_type='01',
                                  arrange=arrange,
                                  sym_type=mname,
                                  name=name,
-                                 n_inits=50,
+                                 n_inits=20,
                                  n_iter=500,
                                  n_rep=repeats,
                                  first_iter=10,
@@ -494,7 +516,7 @@ def fit_all(set_ind=[0, 1, 2, 3], K=10, repeats=100, model_type='01',
 
         # Save the fits and information
         wdir = ut.model_dir + f'/Models/Models_{model_type}'
-        fname = f'/{name}_space-{this_space}_K-{K}_arrange-{arrange}'
+        fname = f'/{name}_space-{this_space}_K-{K}'
 
         # if smooth is not None:
         #     return wdir, fname, info, models
@@ -811,31 +833,30 @@ if __name__ == "__main__":
     #                              subtract_mean=True)
 
     A = pd.read_csv('/home/dzhi/eris_mount/Tian/HCP_img/participants.tsv', delimiter='\t')
-    B = pd.read_csv(f'/home/dzhi/eris_mount/Tian/HCP_img/subj_list/HCP800_training_set.tsv', delimiter='\t')
+    B = pd.read_csv(f'/home/dzhi/eris_mount/Tian/HCP_img/subj_list/HCP40_training_KONG2019.tsv', delimiter='\t')
     hcp_subj_ind = np.array(A[A['participant_id'].isin(B['participant_id'])].index)
 
-    num_parcel = [15]
+    num_parcel = [17]
     smoothing_levels = [6]
     for k in num_parcel:
         for train_smooth in smoothing_levels:
             print(f'Training K={k}, and smoothing = {train_smooth} ...')
-            wdir, fname, info, models = fit_all(set_ind=[0,1,2,3,4,5,6], K=k, repeats=50, model_type='03',
+            wdir, fname, info, models = fit_all(set_ind=[0,2,3,7], K=k, repeats=10, model_type='03',
                                                 this_sess=None, sym_type=['asym'], space='fs32k',
                                                 smooth=[f'{train_smooth}fwhm_zstat_masked-hi0.1lo0.1',
                                                         f'{train_smooth}fwhm_zstat_masked-hi0.1lo0.1',
-                                                        f'{train_smooth}fwhm_zstat_masked-hi0.1lo0.1',
-                                                        f'7_zstat_masked-hi0.1lo0.1',
-                                                        f'{train_smooth}fwhm_zstat_masked-hi0.1lo0.1',
-                                                        f'{train_smooth}fwhm_zstat_masked-hi0.1lo0.1',
-                                                        f'{train_smooth}fwhm_zstat_masked-hi0.1lo0.1'],
-                                                subj_list=[None]*7, arrange='independent',Wc_theta=0.0,
+                                                        f'5_zstat_masked-hi0.1lo0.1',
+                                                        '4fwhm_binarized'],
+                                                subj_list=[None,None,None,hcp_subj_ind],
+                                                arrange='independent', Wc_theta=0.0,
+                                                part_num=[None, None, None, [1,2]],
                                                 em_params={'uniform_kappa': True,
-                                                           'subjects_equal_weight': False,
+                                                           'subjects_equal_weight': True,
                                                            'subject_specific_kappa': False,
                                                            'parcel_specific_kappa': False})
 
 
-            fname = fname + f'_sm{train_smooth}fwhm_zstat_masked-hi0.1lo0.1_rel-0.5'
+            fname = fname + f'_HCP40-Kong_ROI1483Run_sm{train_smooth}fwhm_binarized'
             info.to_csv(wdir + '/task_fusion' + fname + '.tsv', sep='\t')
             with open(wdir + '/task_fusion' + fname + '.pickle', 'wb') as file:
                 pickle.dump(models, file)

@@ -10,7 +10,7 @@ import torch as pt
 from pathlib import Path
 
 # pytorch cuda global flag: True - cuda; False - cpu
-pt.cuda.is_available = lambda : True
+pt.cuda.is_available = lambda : False
 if pt.cuda.is_available():
     DEVICE = 'cuda'
 else:
