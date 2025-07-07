@@ -1,4 +1,4 @@
-import pickle, os
+import pickle, os, warnings
 import numpy as np
 import torch as pt
 import matplotlib.pyplot as plt
@@ -41,6 +41,20 @@ def stacker(data_list):
             stacked_data = np.append(stacked_data, data_list[i], axis=1)
 
     return stacked_data
+
+def get_DU15_parcellation(file_name='DU15NET_Prior', atlas_space='fs32k'):
+    atlas, _ = am.get_atlas(atlas_space)
+    DU15_dir = ERIS_DIR + '/dzhi/workspace/DU15NET'
+    file = nb.load(DU15_dir + f'/HCP/fsLR_32k/{file_name}_fsLR_32k.dlabel.nii')
+    DU15 = atlas.cifti_to_data(file)
+    DU15 = np.nan_to_num(DU15)
+
+    info = pd.read_csv(DU15_dir + '/DU15NET_ColorLUT.csv')
+    network_names = list(info['Abbreviation'])
+    colors = info[["R","G","B","A"]].to_numpy().astype(float)
+    colors[:, :3] = colors[:, :3] / 255
+
+    return DU15, network_names, colors
 
 def get_kong2019_group_parcellation():
     network_names = spio.loadmat(ERIS_DIR + '/dzhi/workspace/CBIG/stable_projects/'
@@ -481,15 +495,15 @@ def build_msc_resting_data(dataset_dir, subj_list, this_at, ses_list='all',
 
     return data
 
-def load_randy_contrasts(space='fs32k', ses_id='ses-s1', type=None,
-                         subj=None, hemis=None, smooth=2, verbose=False):
-    """Loads all the CIFTI files in the data directory of a certain space / type and returns they content as a Numpy array
+def load_randy_contrasts(space='fs32k', subj=None, hemis=None, smooth=2,
+                         verbose=False):
+    """Loads all the CIFTI files in the data directory of a certain space
+     / type and returns they content as a Numpy array
 
     Args:
         space (str): Atlas space (Defaults to 'SUIT3').
-        ses_id (str): Session ID (Defaults to 'ses-s1').
-        type (str): Type of data (Defaults to 'CondHalf').
-        subj (ndarray, str, or list):  Subject numbers /names to get [None = all]
+        subj (ndarray, str, or list):  Subject numbers /names to get
+            [None = all]
     Returns:
         Data (ndarray): (n_subj, n_contrast, n_voxel) array of data
         info (DataFramw): Data frame with common descriptor
@@ -512,8 +526,6 @@ def load_randy_contrasts(space='fs32k', ses_id='ses-s1', type=None,
             raise (NameError('subj must be a list of strings or integers'))
     else:
         raise (NameError('subj must be a str, int, list or ndarray'))
-    if type is None:
-        type = dataset.default_type
 
     hemis_dict = {'L': 'cortex_left', 'R': 'cortex_right'}
     this_at, _ = am.get_atlas(space)

@@ -26,11 +26,22 @@ import pickle
 from copy import deepcopy
 import time
 import FusionModel.util as ut
-from utils import get_kong2019_group_parcellation
+from utils import get_kong2019_group_parcellation, get_DU15_parcellation
+
+# pytorch cuda global flag
+pt.cuda.is_available = lambda : False
+if pt.cuda.is_available():
+    DEVICE = 'cuda'
+else:
+    DEVICE = 'cpu'
+pt.set_default_device(DEVICE)
+pt.set_default_dtype(pt.float32)
 
 GROUP_DIR = '/data/tge/Tian/HCP_img/derivatives/group'
 KONG2019, _, _ = get_kong2019_group_parcellation()
 KONG2019 = pt.tensor(KONG2019, dtype=pt.get_default_dtype())
+DU15, _, _ = get_DU15_parcellation(file_name='DU15NET_PriorProb', atlas_space='fs32k')
+DU15 = pt.tensor(DU15, dtype=pt.get_default_dtype())
 
 def build_data_list(datasets, atlas='MNISymC3', sess=None, cond_ind=None, type=None,
                     part_ind=None, part_num=None, subj=None, join_sess=True,
@@ -85,7 +96,7 @@ def build_data_list(datasets, atlas='MNISymC3', sess=None, cond_ind=None, type=N
         if part_ind[i] is None:
             part_ind[i] = ds.part_ind
         # Make different sessions either the same or different
-        if join_sess:
+        if join_sess[i]:
             if part_num[i] is not None:
                 indx = info[part_ind[i]] == part_num[i]
             else:
@@ -309,8 +320,11 @@ def batch_fit(datasets, sess,
     M = build_model(K, arrange, sym_type, emission, atlas, cond_vec,
                     part_vec, weighting=weighting, Wc=Wc, theta=Wc_theta,
                     num_chain=n_subj, sess=sess, em_params={'num_subj': n_subj, **em_params})
-    weights = pt.ones(len(data)) / len(data)
-
+    # weights = pt.ones(len(data)) / len(data)
+    weights = pt.tensor([td.shape[1] for td in data])
+    weights = (1 / weights) / pt.sum(1 / weights)
+    weights[0:5] = weights[0:5] / (2 * weights[0:5].sum())
+    weights[5:] = weights[5:] / (2 * weights[5:].sum())
     del Wc
     pt.cuda.empty_cache()
     hut.report_cuda_memory()
@@ -344,7 +358,7 @@ def batch_fit(datasets, sess,
         # Attach the data
         m.initialize(data, subj_ind=subj_ind)
         m.ds_weight = weights
-        # m.arrange.logpi = pt.log(KONG2019 + 1e-10)
+        m.arrange.logpi = pt.log(DU15 + 1e-5)
         pt.cuda.empty_cache()
         hut.report_cuda_memory()
 
@@ -355,7 +369,7 @@ def batch_fit(datasets, sess,
                 tol=0.01,
                 fit_arrangement=True,
                 fit_emission=True,
-                init_arrangement=True,
+                init_arrangement=False,
                 init_emission=True,
                 n_inits=n_inits,
                 first_iter=first_iter, verbose=False)
@@ -465,7 +479,7 @@ def fit_all(set_ind=[0, 1, 2, 3], K=10, repeats=100, model_type='01',
         join_sess = True
     elif model_type == '03':
         uniform_kappa = True
-        join_sess = False
+        join_sess = [False, False, True, False]
     elif model_type == '04':
         uniform_kappa = False
         join_sess = False
@@ -836,7 +850,7 @@ if __name__ == "__main__":
     B = pd.read_csv(f'/home/dzhi/eris_mount/Tian/HCP_img/subj_list/HCP40_training_KONG2019.tsv', delimiter='\t')
     hcp_subj_ind = np.array(A[A['participant_id'].isin(B['participant_id'])].index)
 
-    num_parcel = [17]
+    num_parcel = [15]
     smoothing_levels = [6]
     for k in num_parcel:
         for train_smooth in smoothing_levels:
@@ -856,7 +870,7 @@ if __name__ == "__main__":
                                                            'parcel_specific_kappa': False})
 
 
-            fname = fname + f'_HCP40-Kong_ROI1483Run_sm{train_smooth}fwhm_binarized'
+            fname = fname + f'_sm{train_smooth}fwhm_binarized_Ib-jointsess_task0.5rest0.5_DU15-inits'
             info.to_csv(wdir + '/task_fusion' + fname + '.tsv', sep='\t')
             with open(wdir + '/task_fusion' + fname + '.pickle', 'wb') as file:
                 pickle.dump(models, file)

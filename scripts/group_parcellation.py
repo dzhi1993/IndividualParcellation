@@ -919,10 +919,10 @@ if __name__ == "__main__":
 
     DU15, network_names, colors = get_DU15_parcellation(file_name='DU15NET_Prior', atlas_space='fs32k')
     DU15 = ar.expand_mn_1d(DU15, K=16)
-    fname = f'Models_03/asym_Hc_space-fs32k_K-15_HCP40-Kong_ROI1483Run_sm6fwhm_binarized'
-    ut.write_model_to_labelcifti([fname], align=DU15[1:,:].cpu().numpy(), col_names=[f'HCP40-15NET'],
+    fname = f'Models_03/task_fusion/asym_MdNiIbHc_space-fs32k_K-15_sm6fwhm_binarized_Ib-jointsess_task0.5rest0.5_DU15-inits'
+    ut.write_model_to_labelcifti([fname], align=DU15[1:,:].cpu().numpy(), col_names=None,
                                     label_names=network_names, label_RGBA=colors,
-                                    load='best', oname=fname, device=DEVICE)
+                                    load='all', oname=fname, device=DEVICE)
 
     for i in range(50,51):
         fname = f'Models_03/task_fusion/asym_MdPoNiIbWmDeSo_space-fs32k_K-{i}'
