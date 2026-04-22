@@ -1,7 +1,5 @@
 IndividualParcellation
 ====
-Diedrichsen Lab, Western University
-
 This repository hosts a general pipeline to generate individual cerebellar parcellations under a 
 hierarchical Bayesian brain parcellation framework
 ([HierarchBayesParcel](https://github.com/DiedrichsenLab/HierarchBayesParcel)) using individual 

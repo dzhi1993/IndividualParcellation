@@ -53,6 +53,23 @@ def get_DU15_parcellation(file_name='DU15NET_Prior', atlas_space='fs32k'):
 
     return DU15, network_names, colors
 
+def get_kong2019_group_parcellation():
+    network_names = spio.loadmat(ERIS_DIR + '/dzhi/workspace/CBIG/stable_projects/'
+                                 'brain_parcellation/Kong2019_MSHBM/lib/'
+                                 'group_priors/HCP_40/17network_labels.mat')['network_name']
+    network_names = ['???'] + [network_names[0][i][0] for i in range(17)]
+
+    colors = spio.loadmat(ERIS_DIR + '/dzhi/workspace/CBIG/stable_projects/'
+                     'brain_parcellation/Kong2019_MSHBM/lib/'
+                     'group_priors/HCP_40/group.mat')['colors']/255
+    colors = colors[1:,:]
+    colors = np.hstack((colors, np.ones((17, 1))))
+    colors = np.vstack((np.zeros(4), colors))
+    KONG2019 = nb.load(ERIS_DIR + '/dzhi/Indiv_par/Kong_2019/group_prior' \
+                       '/HCP_40/Kong-2019_MSHBM_HCP40_prob_prior.dscalar.nii').get_fdata()[:]
+
+    return KONG2019, network_names, colors
+
 def build_data_list(datasets, atlas='MNISymC3', sess=None, cond_ind=None, type=None,
                     part_ind=None, part_num=None, subj=None, join_sess=True,
                     join_sess_part=False, smooth=None, hemis=None):
@@ -557,7 +574,9 @@ def build_hcp_datasets(dataset_dir, subj_list, this_at, ses_list=['ses-rest1'],
             # dat = nb.load(data_dir.format(s) + file_name)
             # # this_data.append(atlas.read_data(data_dir.format(s) + file_name).T)
             # dat = dat.get_fdata().astype(np.float32)
-            dat = this_at.cifti_to_data(data_dir.format(s) + file_name)
+            dat = this_at.cifti_to_data(data_dir.format(s) + file_name).astype(np.float16)
+            if "binarized" in file_name:
+                dat = dat.astype(np.int8)
 
             if hemis is not None: # if cortical data
                 stru_idx = this_at.structure.index(hemis_dict[hemis])
@@ -590,11 +609,10 @@ def build_hcp_datasets(dataset_dir, subj_list, this_at, ses_list=['ses-rest1'],
         cond_vec.append(info[cond_ind].values[indx].reshape(-1, ))
         subj_ind.append(np.arange(0, n_subj))
     else:
-        splitter = 'half' if info.get('half') is not None else 'run'
+        splitter = 'sess' if info.get('sess') is not None else 'half'
         sessions = np.unique(info[splitter])
         # Now build and split across the correct sessions:
         for s in sessions:
-
             if part_num is None:
                 indx_list = [info[splitter] == s]
             else:
@@ -614,8 +632,8 @@ def load_hcp_timeseries(dataset_dir, subj_list, this_at, run_list=[0,1,2,3],
 
     # Step 1: Build the data into list of 3d tensor
     T = pd.read_csv(dataset_dir + f'/{subj_list}', sep='\t')
-    B = pd.read_csv(f'/home/dzhi/eris_mount/Tian/HCP_img/subj_list/HCP40_training_KONG2019.tsv', delimiter='\t')
-    T = T[~T['participant_id'].isin(B['participant_id'])]
+    # B = pd.read_csv(f'/home/dzhi/eris_mount/Tian/HCP_img/subj_list/HCP40_training_KONG2019.tsv', delimiter='\t')
+    # T = T[~T['participant_id'].isin(B['participant_id'])]
 
     data_dir = dataset_dir + '/rfMRI/fix_32k/{0}'
     hemis_dict = {'L': 'cortex_left', 'R': 'cortex_right'}
@@ -624,7 +642,8 @@ def load_hcp_timeseries(dataset_dir, subj_list, this_at, run_list=[0,1,2,3],
     for i, run_id in enumerate(run_list):
         ses_data=[]
         for s in T.participant_id:
-            # Assemble file name            
+            # Assemble file name
+            print(f"Loading subj {s}")
             if smooth is None or (smooth == 0):
                 file_name = f'/{s}_run{run_id}'
             else:
@@ -903,26 +922,22 @@ if __name__ == "__main__":
     # with open(wdir + fname + '.pickle', 'wb') as file:
     #     pickle.dump(models, file)
 
-    # network_names = spio.loadmat('/data/tge/dzhi/workspace/CBIG/stable_projects/'
-    #                              'brain_parcellation/Kong2019_MSHBM/lib/'
-    #                              'group_priors/HCP_40/17network_labels.mat')['network_name']
-    # network_names = ['???'] + [network_names[0][i][0] for i in range(17)]
-    #
-    # colors = spio.loadmat('/data/tge/dzhi/workspace/CBIG/stable_projects/'
-    #                  'brain_parcellation/Kong2019_MSHBM/lib/'
-    #                  'group_priors/HCP_40/group.mat')['colors']/255
-    # colors = colors[1:,:]
-    # colors = np.hstack((colors, np.ones((17, 1))))
-    # colors = np.vstack((np.zeros(4), colors))
-    # KONG2019 = atlas.cifti_to_data('/data/tge/dzhi/Indiv_par/Kong_2019/group_prior' \
-    #                    '/HCP_40/Kong-2019_MSHBM_HCP40_prob_prior.dscalar.nii')[:]
+
+
+    KONG2019, network_names, colors = get_kong2019_group_parcellation()
+    fname = f'Models_03/indiv_parcellation/validation_set/asym_HCP40+HCPrest-2run-indiv_space-fs32k_K-17_Ico642Run_groupstrengh-2_spatial-10.dlabel.nii'
+    colors[[1, 6]] = colors[[6, 1]]
+    ut.write_model_to_labelcifti([fname], align=KONG2019, col_names=[f'Hc40'],
+                                 label_names=network_names, label_RGBA=colors,
+                                 load='all', oname=fname, device=DEVICE)
+
 
     DU15, network_names, colors = get_DU15_parcellation(file_name='DU15NET_Prior', atlas_space='fs32k')
     DU15 = ar.expand_mn_1d(DU15, K=16)
-    fname = f'Models_03/task_fusion/asym_MdNiIbHc_space-fs32k_K-15_sm6fwhm_binarized_Ib-jointsess_task0.5rest0.5_DU15-inits'
+    fname = f'Models_03/task_fusion/asym_MdNiIb_space-fs32k_K-15_sm6fwhm_zstat_masked-hi0.1lo0.1_Ib-jointsess_DU15-inits_equalweights'
     ut.write_model_to_labelcifti([fname], align=DU15[1:,:].cpu().numpy(), col_names=None,
                                     label_names=network_names, label_RGBA=colors,
-                                    load='all', oname=fname, device=DEVICE)
+                                    load='best', oname=fname, device=DEVICE)
 
     for i in range(50,51):
         fname = f'Models_03/task_fusion/asym_MdPoNiIbWmDeSo_space-fs32k_K-{i}'

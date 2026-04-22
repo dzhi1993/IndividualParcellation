@@ -172,3 +172,25 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Editor / IDE metadata
+.idea/
+.vscode/
+*.iml
+
+# Notebook-generated files
+**/.ipynb_checkpoints/
+*.nbconvert.ipynb
+
+# Local temp / merge files
+*.swp
+*.swo
+*~
+*.orig
+
+# Project-generated outputs
+#results/

@@ -26,6 +26,7 @@ import pickle
 from copy import deepcopy
 import time
 import FusionModel.util as ut
+import utils as fut
 from utils import get_kong2019_group_parcellation, get_DU15_parcellation
 
 # pytorch cuda global flag
@@ -45,7 +46,7 @@ DU15 = pt.tensor(DU15, dtype=pt.get_default_dtype())
 
 def build_data_list(datasets, atlas='MNISymC3', sess=None, cond_ind=None, type=None,
                     part_ind=None, part_num=None, subj=None, join_sess=True,
-                    join_sess_part=False, smooth=None, hemis=None):
+                    join_sess_part=False, smooth=None, hemis=None, num_task=None):
     """Builds list of datasets, cond_vec, part_vec, subj_ind
     from different data sets
     Args:
@@ -83,6 +84,7 @@ def build_data_list(datasets, atlas='MNISymC3', sess=None, cond_ind=None, type=N
         dat, info, ds = get_dataset(ut.base_dir, datasets[i],
                                     atlas=atlas, sess=sess[i],
                                     type=type[i], subj=subj[i], smooth=smooth[i])
+        dat = np.nan_to_num(dat)
 
         if hemis is not None:
             stru_idx = this_at.structure.index(hemis_dict[hemis])
@@ -137,13 +139,14 @@ def build_data_list(datasets, atlas='MNISymC3', sess=None, cond_ind=None, type=N
                 # cond_mask = np.where(rw <= 0.5, False, True)
                 # cond_mask = np.hstack((cond_mask, cond_mask.copy()))
                 # this_dat[~cond_mask, :] = np.nan
-
+                #
                 # print(f'{datasets[i]} session {s} - data drop {np.sum(~cond_mask)/2} conditions from {n_subj} subjects at cut-off > 0.5' )
                 # print(f'{np.sum(~cond_mask)}/{cond_mask.size} contrasts, drop rate {np.sum(~cond_mask)/cond_mask.size}')
 
                 # Make the zero voxels to nan
-                zero_cols = np.all(this_dat == 0, axis=1, keepdims=True)
-                data.append(np.where(zero_cols, np.nan, this_dat))
+                # zero_cols = np.all(this_dat == 0, axis=1, keepdims=True)
+                # data.append(np.where(zero_cols, np.nan, this_dat))
+                data.append(this_dat)
                 # indx = pt.tensor(np.where(idx == True)[0])
                 # data.append(pt.index_select(dat, 1, indx))
                 cond_vec.append(this_cond_vec)
@@ -240,6 +243,7 @@ def batch_fit(datasets, sess,
               hemis=None,
               second_converge=True,
               Wc_theta=1,
+              num_task=None,
               em_params={}):
     """ Executes a set of fits starting from random starting values
     selects the best one from a batch and saves them
@@ -277,13 +281,31 @@ def batch_fit(datasets, sess,
                                                          join_sess=join_sess,
                                                          join_sess_part=join_sess_part,
                                                          smooth=smooth,
-                                                         hemis=hemis)
-    
+                                                         hemis=hemis,
+                                                         num_task=num_task)
+    # if num_task is not None:
+    #     this_ses = sess[0][0]
+    #     data_dir = f'/home/dzhi/eris_mount/Tian/{datasets[0]}/derivatives/group/data'
+    #     maps = nb.load(
+    #         data_dir + f'/group_space-fs32k_{this_ses}_CondAll_masked-hi0.1lo0.1_binarized.dscalar.nii').get_fdata()
+    #     task_idx, _ = fut.greedy_task_beta_selection(maps, num_task, lamda=0)
+    #
+    #     indices = [np.where(np.isin(cond, np.array(task_idx) + 1))[0] for cond in cond_vec]
+    #     for i, idx in enumerate(indices):
+    #         data[i] = data[i][:, idx, :]
+    #         cond_vec[i] = cond_vec[i][idx]
+    #         part_vec[i] = part_vec[i][idx]
+
     # data = [pt.load(GROUP_DIR + '/processed_ses-rest1.pt'),
     #         pt.load(GROUP_DIR + '/processed_ses-rest2.pt')]
     # cond_vec = [np.tile(np.arange(1,1211), 2), np.tile(np.arange(1,1211), 2)]
     # part_vec = [np.repeat(np.array([1,2]), 1210), np.repeat(np.array([1,2]), 1210)]
     # subj_ind = [np.arange(800), np.arange(800)]
+    # data = [(d - np.mean(d, axis=1, keepdims=True)).astype(np.float32) for d in data]
+    # data = [np.concatenate(data[0:4], axis=1)]
+    # cond_vec = [np.concatenate(cond_vec[0:4])]
+    # part_vec = [np.repeat(np.array([1,2,3,4]), 1483)]
+    # subj_ind = [subj_ind[0]]
 
     toc = time.perf_counter()
     print(f'Done loading. Used {toc - tic:0.4f} seconds!')
@@ -320,11 +342,11 @@ def batch_fit(datasets, sess,
     M = build_model(K, arrange, sym_type, emission, atlas, cond_vec,
                     part_vec, weighting=weighting, Wc=Wc, theta=Wc_theta,
                     num_chain=n_subj, sess=sess, em_params={'num_subj': n_subj, **em_params})
-    # weights = pt.ones(len(data)) / len(data)
-    weights = pt.tensor([td.shape[1] for td in data])
-    weights = (1 / weights) / pt.sum(1 / weights)
-    weights[0:5] = weights[0:5] / (2 * weights[0:5].sum())
-    weights[5:] = weights[5:] / (2 * weights[5:].sum())
+    weights = pt.ones(len(data)) / len(data)
+    # weights = pt.tensor([td.shape[1] for td in data])
+    # weights = (1 / weights) / pt.sum(1 / weights)
+    # weights[0:5] = weights[0:5] / (2 * weights[0:5].sum())
+    # weights[5:] = weights[5:] / (2 * weights[5:].sum())
     del Wc
     pt.cuda.empty_cache()
     hut.report_cuda_memory()
@@ -358,7 +380,8 @@ def batch_fit(datasets, sess,
         # Attach the data
         m.initialize(data, subj_ind=subj_ind)
         m.ds_weight = weights
-        m.arrange.logpi = pt.log(DU15 + 1e-5)
+        m.arrange.logpi = pt.log(DU15 + 1e-2)
+        m.arrange.logpi = m.arrange.logpi - m.arrange.logpi.mean(dim=0)
         pt.cuda.empty_cache()
         hut.report_cuda_memory()
 
@@ -435,7 +458,7 @@ def batch_fit(datasets, sess,
 def fit_all(set_ind=[0, 1, 2, 3], K=10, repeats=100, model_type='01',
             sym_type=['asym', 'sym'], arrange='independent', subj_list=None,
             weighting=None, this_sess=None, space=None, smooth=None,
-            sc=True, Wc_theta=1, part_num=None, em_params={}):
+            sc=True, Wc_theta=1, part_num=None, num_task=None, em_params={}):
     # Get dataset info
     T = pd.read_csv(ut.base_dir + '/dataset_description.tsv', sep='\t')
     datasets = T.name.to_numpy()
@@ -448,6 +471,7 @@ def fit_all(set_ind=[0, 1, 2, 3], K=10, repeats=100, model_type='01',
     type[7] = 'ROI1483Run'
     type[13] = 'Ico642Run'
     cond_ind = T.default_cond_ind.to_numpy()
+    cond_ind[2] = 'cond_num'
     cond_ind[13] = 'net_id'
     part_ind = np.array(['half'] * len(T), dtype=object)
 
@@ -526,6 +550,7 @@ def fit_all(set_ind=[0, 1, 2, 3], K=10, repeats=100, model_type='01',
                                  hemis=hemis,
                                  second_converge=sc,
                                  Wc_theta=Wc_theta,
+                                 num_task=num_task,
                                  em_params=em_params)
 
         # Save the fits and information
@@ -852,25 +877,27 @@ if __name__ == "__main__":
 
     num_parcel = [15]
     smoothing_levels = [6]
+    # num_tasks = [16,17,18,19,20,21,22,23,24,25,26,27,28,29,30]
+    # for ses in ['ses-01', 'ses-02']:
+    #     for num_task in num_tasks:
     for k in num_parcel:
         for train_smooth in smoothing_levels:
             print(f'Training K={k}, and smoothing = {train_smooth} ...')
-            wdir, fname, info, models = fit_all(set_ind=[0,2,3,7], K=k, repeats=10, model_type='03',
+            wdir, fname, info, models = fit_all(set_ind=[0,2,3], K=k, repeats=10, model_type='03',
                                                 this_sess=None, sym_type=['asym'], space='fs32k',
                                                 smooth=[f'{train_smooth}fwhm_zstat_masked-hi0.1lo0.1',
                                                         f'{train_smooth}fwhm_zstat_masked-hi0.1lo0.1',
-                                                        f'5_zstat_masked-hi0.1lo0.1',
-                                                        '4fwhm_binarized'],
-                                                subj_list=[None,None,None,hcp_subj_ind],
+                                                        f'5_zstat_masked-hi0.1lo0.1'],
+                                                subj_list=[None,None,None],
                                                 arrange='independent', Wc_theta=0.0,
-                                                part_num=[None, None, None, [1,2]],
+                                                part_num=[None, None, None],
                                                 em_params={'uniform_kappa': True,
                                                            'subjects_equal_weight': True,
                                                            'subject_specific_kappa': False,
                                                            'parcel_specific_kappa': False})
 
 
-            fname = fname + f'_sm{train_smooth}fwhm_binarized_Ib-jointsess_task0.5rest0.5_DU15-inits'
-            info.to_csv(wdir + '/task_fusion' + fname + '.tsv', sep='\t')
-            with open(wdir + '/task_fusion' + fname + '.pickle', 'wb') as file:
-                pickle.dump(models, file)
+        fname = fname + f'_sm{train_smooth}fwhm_zstat_masked-hi0.1lo0.1_Ib-jointsess_equalweights'
+        info.to_csv(wdir + '/task_fusion' + fname + '.tsv', sep='\t')
+        with open(wdir + '/task_fusion' + fname + '.pickle', 'wb') as file:
+            pickle.dump(models, file)

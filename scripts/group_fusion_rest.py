@@ -77,7 +77,7 @@ def build_data_list(datasets, atlas='MNISymC3', sess=None, cond_ind=None, type=N
         dat, info, ds = get_dataset(ut.base_dir, datasets[i],
                                     atlas=atlas, sess=sess[i],
                                     type=type[i], subj=subj[i], 
-                                    smooth=smooth[i], rest=False)
+                                    smooth=smooth[i])
         if hemis is not None:
             stru_idx = this_at.structure.index(hemis_dict[hemis])
             dat = dat[:,:,this_at.indx_full[stru_idx]]
@@ -858,8 +858,8 @@ if __name__ == "__main__":
     # num_cpus = int(sys.argv[3])  # Get CPUs from SLURM
 
     # Get the correct subject list
-    A = pd.read_csv('/data/tge/Tian/HCP_img/participants.tsv', delimiter='\t')
-    B = pd.read_csv(f'/data/tge/Tian/HCP_img/subj_list/HCP{num_subj}_training_KONG2019.tsv', delimiter='\t')
+    A = pd.read_csv('/home/dzhi/eris_mount/Tian/HCP_img/participants.tsv', delimiter='\t')
+    B = pd.read_csv(f'/home/dzhi/eris_mount/Tian/HCP_img/subj_list/HCP40_training_KONG2019.tsv', delimiter='\t')
     hcp_subj_ind = np.array(A[A['participant_id'].isin(B['participant_id'])].index)
     # hcp_subj_ind = np.arange(0, 5)
 
@@ -872,7 +872,7 @@ if __name__ == "__main__":
 
     # print("Processing complete. Files saved:", results)
 
-    wdir, fname, info, models = fit_all(set_ind=[7], K=15, repeats=50, model_type='03',
+    wdir, fname, info, models = fit_all(set_ind=[7], K=17, repeats=50, model_type='03',
                                         this_sess=None, sym_type=['asym'], space='fs32k',
                                         smooth=[None], 
                                         subj_list=[hcp_subj_ind], 

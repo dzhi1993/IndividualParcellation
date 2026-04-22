@@ -24,12 +24,13 @@ import HierarchBayesParcel.evaluation as hev
 import HierarchBayesParcel.util as hut
 import FusionModel.util as futil
 import FusionModel.evaluate as ev
-import group_parcellation as gp
+import IndividualParcellation.scripts.group_parcellation as gp
 import utils as ut
 
-from group_parcellation import build_ukb_datasets, build_hcp_datasets, load_hcp_timeseries, load_hcp_task_contrast
+from IndividualParcellation.scripts.group_parcellation import build_ukb_datasets, build_hcp_datasets, load_hcp_timeseries, load_hcp_task_contrast
 from global_config import MODEL_DIR, BASE_DIR, ATLAS_DIR
 HCP_DIR = '/home/dzhi/eris_mount/Tian/HCP_img'
+RESULT_DIR = '/home/dzhi/eris_mount/dzhi/Indiv_par/Results'
 # BRAIN_WISE = ['whole brain','whole brain','left hemisphere','whole brain',
 #                 'left hemisphere','left hemisphere','whole brain','whole brain',
 #                 'left hemisphere','left hemisphere','whole brain','whole brain']
@@ -78,7 +79,7 @@ def load_existing_atlas():
     return parcels, names, n_parcels
 
 
-def make_eval_info(K, atlas='MNIAsymC2', train_info=['UKB'], train_sess='ses-2',
+def make_eval_info(K, atlas='fs32k', train_info=['UKB'], train_sess='ses-2',
                    tdata='MDTB', test_sess='ses-1', model_type='Models_03', 
                    group_map_name='Buckner7', test_kappa=None):
     """ Collects all the information from the model and the
@@ -115,12 +116,18 @@ def eval_group_DCBC(U_group, t_data, dist, minfo, subj_list=None):
         U_group = pt.tensor(U_group, dtype=pt.get_default_dtype())
 
     num_subj = t_data.shape[0]
+    hut.report_cuda_memory()
+    pt.cuda.empty_cache()
     # Now run the DCBC evaluation fo the group
     # zvalue_group = ev.calc_test_zvalue(U_group, t_data, return_single=False)
     dcbc_group = ev.calc_test_dcbc(U_group, t_data, dist, trim_nan=True)
+    hut.report_cuda_memory()
+    pt.cuda.empty_cache()
     inhomo_group = ev.calc_test_task_inhomogeneity(U_group, t_data,
                                                    return_single=True)
     # homo_group = ev.calc_test_homogeneity(U_group, t_data)
+    hut.report_cuda_memory()
+    pt.cuda.empty_cache()
 
     # ------------------------------------------
     # Collect the information from the evaluation
@@ -489,7 +496,7 @@ def eval_HCP_group_parcellation(parcels, names, space='fs32k', test_ses='all', K
                                 train_smooth=None, test_smooth=None, subj_list="HCP80_training+validation_set.tsv",
                                 out_file=1):
     out_file = int(out_file)
-
+    hcp_tasks = ['EMOTION', 'GAMBLING', 'LANGUAGE', 'MOTOR', 'RELATIONAL', 'SOCIAL', 'WM']
     if not isinstance(parcels, list):
         parcels = [parcels]
 
@@ -515,18 +522,19 @@ def eval_HCP_group_parcellation(parcels, names, space='fs32k', test_ses='all', K
     ## Load HCP subjects test data
     print(f'Start loading data: HCP {space} resting - Tseries ...')
     tic = time.perf_counter()
-    # t_data, _, _, _, _ = build_hcp_datasets(HCP_DIR, subj_list, atlas, ses_list=['ses-task'],
-    #                                     join_sess=False, join_sess_part=False,
-    #                                     part_ind=['half'], part_num=None,cond_ind=['reg_id'],
-    #                                     type=['CondAll'], hemis=hem, smooth=test_smooth)
-    
-    # t_data = load_hcp_timeseries(HCP_DIR, subj_list, atlas, run_list=[out_file],
-    #                             type='Tseries', hemis=hem, smooth=test_smooth)
-    # from indiv_eval_hcp import load_hcp_contrasts
+    ## HCP task betas
+    t_data, _, _, _, t_info = ut.build_hcp_datasets(HCP_DIR, subj_list,
+                                                    atlas, ses_list=['ses-task'], join_sess=False, join_sess_part=False,
+                                                    part_ind=['half'], part_num=None, cond_ind=['reg_id'],
+                                                    type=['CondHalf'], hemis=None, smooth='6fwhm')
+    t_info = np.array_split(t_info, 2)[0]
+    # t_data = ut.load_hcp_timeseries(HCP_DIR, subj_list,
+    #                                 space=atlas.name, run_list=[2, 3],
+    #                                 type='Tseries', hemis=None, smooth=None)
     # t_data, t_info = ut.load_hcp_contrasts(HCP_DIR, subj_list, space=atlas.name,
     #                                     hemis=None, smooth='4_MSMAll')
-    t_data, t_info = ut.load_randy_contrasts(space=atlas.name, hemis=None, smooth='2',
-                                             subj=[1,2,3,5,6,7,8,11,12,13,14])
+    # t_data, t_info = ut.load_randy_contrasts(space=atlas.name, hemis=None, smooth='2',
+    #                                          subj=[1,2,3,5,6,7,8,11,12,13,14])
 
     # t_data = ut.build_resting_data('RANDY15', space='fs32k',
     #                                         ses_list=[f'ses-rest{i}' for i in range(1,11)],
@@ -543,25 +551,51 @@ def eval_HCP_group_parcellation(parcels, names, space='fs32k', test_ses='all', K
         ######## Step 3: Evaluate individual maps using DCBC
         # Step 3.2: Gatering all necessary information for evaluation
         eval_info = make_eval_info(K[i], atlas=space, train_info=['group_train'], train_sess='all',
-                                    tdata='RANDY15_test', test_sess=None,
+                                    tdata='HCP203_test', test_sess=None,
                                     model_type='Models_03', group_map_name=names[i],
                                     test_kappa=None)
         for r, td in enumerate(t_data):
-            hut.report_cuda_memory()
-            # Step 3.3: Do DCBC evaluation on the second half data
-            res = eval_group_DCBC(Pgroup, td, dist, eval_info, subj_list=None)
-            pt.cuda.empty_cache()
-            hut.report_cuda_memory()
-            res['brain_wise'] = 'whole_brain'
-            res['test_run'] = r
-            res['train_smooth'] = train_smooth[i]
-            res['test_smooth'] = test_smooth
-            res['test_type'] = 'contrasts'
-            results = pd.concat([results, res], ignore_index=True)
+
+            tasks_list = hcp_tasks + ['all']
+            for task in tasks_list:
+                if task == 'all':
+                    idx = [True] * len(t_info)
+
+                    # Individual evaluation
+                    # homo_indiv = ev.calc_test_homogeneity(Pindiv, td[:,idx,:])
+                    zvalue_group = ev.calc_test_zvalue(Pgroup, td[:, idx, :], return_single=False)
+                    np.save(RESULT_DIR + f'/section_4/HCP/zvalues' +
+                            f'/zvalue_group_{names[i]}_on_HCPbetas_sm6_{out_file}.npy',
+                            zvalue_group.cpu().numpy())
+                    inhomo_nets = ev.calc_test_task_inhomogeneity(Pgroup, td[:, idx, :], return_single=False)
+                    inhomo_nets = pt.where(inhomo_nets == 0, pt.nan, inhomo_nets)
+                    np.save(RESULT_DIR + f'/section_4/HCP/inhomogeneity' +
+                            f'/inhomo_nets_group_{names[i]}_on_HCPbetas_sm6_{out_file}.npy',
+                            inhomo_nets.cpu().numpy())
+
+                else:
+                    idx = t_info['task_name'] == task
+
+                hut.report_cuda_memory()
+                pt.cuda.empty_cache()
+                # Step 3.3: Do DCBC evaluation on the second half data
+                res = eval_group_DCBC(Pgroup, td[:,idx,:], dist, eval_info,
+                                      subj_list=pd.read_csv(HCP_DIR+subj_list, delimiter='\t')["participant_id"].to_list())
+
+                pt.cuda.empty_cache()
+                hut.report_cuda_memory()
+                res['brain_wise'] = 'whole_brain'
+                res['test_run'] = r
+                res['task_name'] = task
+                res['train_smooth'] = train_smooth[i]
+                res['test_smooth'] = test_smooth
+                res['test_type'] = 'betas'
+                results = pd.concat([results, res], ignore_index=True)
     
-    results.to_csv(f'/home/dzhi/eris_mount/dzhi/Indiv_par/Evaluations/eval_group_DU_vs_HBP_K-15_on-RANDY15test-rsTseries-10run_hemis-{hem}_new.tsv',
-                    index=False, sep='\t')
-    
+    # results.to_csv(f'/home/dzhi/eris_mount/dzhi/Indiv_par/Evaluations/eval_group_rest_vs_task_vs_fusion_K-17_on-HCPtest-task-allcontrasts_sm4_{out_file}.tsv',
+    #                 index=False, sep='\t')
+    return results
+
 
 def eval_fs32k_group_parcellation(parcels, names, t_data, task_nam=None, space='fs32k', train_smooth=None,
                                   test_smooth=None, K=[7]):
@@ -672,33 +706,57 @@ if __name__ == "__main__":
     # 1. DU15 rest-only baseline
     DU15, net_name, colors = gp.get_DU15_parcellation(file_name='DU15NET_Prior', atlas_space='fs32k')
     # 2. HBP15 rest-only baseline
-    HBP_15_Hc = atlas.cifti_to_data(RES_DIR + '/asym_Hc_space-fs32k_K-15_HCP40-Kong_ROI1483Run_sm6fwhm_binarized.dlabel.nii').reshape(-1)
+    # HBP_15_Hc = atlas.cifti_to_data(RES_DIR + '/asym_Hc_space-fs32k_K-15_HCP40-Kong_ROI1483Run_sm6fwhm_binarized.dlabel.nii').reshape(-1)
+    HBP_15_Hc = atlas.cifti_to_data(
+        RES_DIR + '/asym_Hc_space-fs32k_K-15_HCP40-Kong_ROI1483Run_sm6fwhm_binarized_DU15-inits.dlabel.nii').reshape(-1)
     # HBP_15_HcMd = atlas.cifti_to_data(RES_DIR + '/task_fusion/asym_MdHc_space-fs32k_K-15_arrange-independent_sm6fwhm_zstat_masked-hi0.1lo0.1.dlabel.nii').reshape(-1)
     # HBP_15_Hc = atlas.cifti_to_data(RES_DIR + '/asym_Hc_space-fs32k_K-15_HCP40-Kong_ROI1483Run_sm6fwhm_binarized_all.dlabel.nii')
     # HBP_15_MdNiIbHc = atlas.cifti_to_data(RES_DIR + '/task_fusion/asym_MdNiIbHc_space-fs32k_K-15_sm6fwhm_binarized_Ib-jointsess_all.dlabel.nii')[0]
 
-    # KONG2019 = np.argmax(ut.get_kong2019_group_parcellation()[0], axis=0)
-    # Hc = atlas.cifti_to_data(RES_DIR + '/task_fusion/asym_Hc_space-fs32k_K-17_HCP40-Kong_ROI1483Run_sm6fwhm_binarized.dlabel.nii').reshape(-1)
+    ############ 17 networks ############
+    YEO2011 = nb.load('/home/dzhi/eris_mount/dzhi/workspace/res/group/Yeo2011_17.dlabel.nii').get_fdata().reshape(-1)
+    KONG2019 = np.argmax(ut.get_kong2019_group_parcellation()[0], axis=0) + 1
+    Hc_1 = atlas.cifti_to_data(RES_DIR + '/task_fusion/asym_Hc_space-fs32k_K-17_HCP40-Kong_ROI1483Run_sm6fwhm_binarized_all.dlabel.nii')[32].reshape(-1)
+    # Hc_2 = atlas.cifti_to_data(
+    #     RES_DIR + '/asym_Hc_space-fs32k_K-17_HCP40subjects_ROI1483Run_desc-sm4fwhm_binarized.dlabel.nii').reshape(-1)
+    MbNiIb_1 = atlas.cifti_to_data(
+        RES_DIR + '/task_fusion/asym_MdNiIb_space-fs32k_K-17_arrange-independent_sm6fwhm_zstat_masked-hi0.1lo0.1_all.dlabel.nii')[0]
+    MbNiIbHc_1 = atlas.cifti_to_data(
+        RES_DIR + '/task_fusion/asym_MdNiIbHc_space-fs32k_K-17_sm6fwhm_binarized_Ib-jointsess_all.dlabel.nii')[0]
+
+    ############ TASK ############
     # MbNiIb = atlas.cifti_to_data(RES_DIR + '/task_fusion/asym_MdNiIb_space-fs32k_K-17_arrange-independent_sm6fwhm_zstat_masked-hi0.1lo0.1_all.dlabel.nii')[0]
     # 3. Fusion(MbNiIbHc) weighting N-feature, DU15 inits
-    MbNiIbHc_1 = atlas.cifti_to_data(RES_DIR + '/task_fusion/asym_MdNiIbHc_space-fs32k_K-15_sm6fwhm_binarized_Ib-jointsess_DU15-inits.dlabel.nii')[0]
-    # 4. Fusion(MbNiIbHc) weighting equal, DU15 inits
-    MbNiIbHc_2 = atlas.cifti_to_data(
-        RES_DIR + '/task_fusion/asym_MdNiIbHc_space-fs32k_K-15_sm6fwhm_binarized_Ib-jointsess_equalweights_all.dlabel.nii')[0]
-    # 5. Fusion(MbNiIbHc) weighting rest1task1, DU15 inits
-    MbNiIbHc_3 = atlas.cifti_to_data(
-        RES_DIR + '/task_fusion/asym_MdNiIbHc_space-fs32k_K-15_sm6fwhm_binarized_Ib-jointsess_task0.5rest0.5_DU15-inits_all.dlabel.nii')[0]
+    # MbNiIbHc_1 = atlas.cifti_to_data(RES_DIR + '/task_fusion/asym_MdNiIbHc_space-fs32k_K-15_sm6fwhm_binarized_Ib-jointsess_DU15-inits.dlabel.nii')[0]
+    # # 4. Fusion(MbNiIbHc) weighting equal, DU15 inits
+    # MbNiIbHc_2 = atlas.cifti_to_data(
+    #     RES_DIR + '/task_fusion/asym_MdNiIbHc_space-fs32k_K-15_sm6fwhm_binarized_Ib-jointsess_equalweights_all.dlabel.nii')[0]
+    # # 5. Fusion(MbNiIbHc) weighting rest1task1, DU15 inits
+    # MbNiIbHc_3 = atlas.cifti_to_data(
+    #     RES_DIR + '/task_fusion/asym_MdNiIbHc_space-fs32k_K-15_sm6fwhm_binarized_Ib-jointsess_task0.5rest0.5_DU15-inits_all.dlabel.nii')[0]
 
-    parcels = [DU15, HBP_15_Hc, MbNiIbHc_1, MbNiIbHc_2, MbNiIbHc_3]
-    names = ['DU15', 'HBP15_rest', 'Fusion(N-feature) DU15init', 'Fusion(equal) DU15init',
-             'Fusion(rest0.5task0.5) DU15init']
+
+    # MdNiIbWmDeSo_1 = atlas.cifti_to_data(
+    #     RES_DIR + '/task_fusion/asym_MdNiIbWmDeSo_space-fs32k_K-17_arrange-independent_sm6fwhm_zstat_masked-hi0.1lo0.1.dlabel.nii')[0]
+    #
+    # MdNiIbWmDeSoHc_1 = atlas.cifti_to_data(
+    #     RES_DIR + '/task_fusion/asym_MdNiIbWmDeSoHc_space-fs32k_K-17_sm6fwhm_binarized_Ib-jointsess_all.dlabel.nii')[0]
+    # MdNiIbWmDeSoHc_2 = atlas.cifti_to_data(
+    #     RES_DIR + '/task_fusion/asym_MdNiIbWmDeSoHc_space-fs32k_K-17_sm6fwhm_binarized_Ib-jointsess_equalweights_all.dlabel.nii')[0]
+
+
+    parcels = [YEO2011, KONG2019, Hc_1, MbNiIb_1, MbNiIbHc_1]
+    names = ['YEO2011', 'KONG2019', 'HBP17_rest', '3Task', 'Fusion(Nfeature 3+1)']
+
+    # parcels = [DU15, HBP_15_Hc, MbNiIbHc_1, MbNiIb]
+    # names = ['DU15', 'HBP15_rest', 'Fusion(N-feature) DU15init', 'Task (MbNiIb)']
 
     # 6. Fusion(MbNiIbHc) weighting equal, random inits
-    MbNiIbHc_4 = atlas.cifti_to_data(
-        RES_DIR + '/task_fusion/asym_MdNiIbHc_space-fs32k_K-15_sm6fwhm_binarized_Ib-jointsess_equalweights_random-inits_all.dlabel.nii')
-    parcels += [MbNiIbHc_4[i] for i in range(MbNiIbHc_4.shape[0])]
-    names += [f'Fusion(equal) randinit{i}' for i in range(MbNiIbHc_4.shape[0])]
-    n_parcels = [15] * len(parcels)
+    # MbNiIbHc_4 = atlas.cifti_to_data(
+    #     RES_DIR + '/task_fusion/asym_MdNiIbHc_space-fs32k_K-15_sm6fwhm_binarized_Ib-jointsess_equalweights_random-inits_all.dlabel.nii')
+    # parcels += [MbNiIbHc_4[i] for i in range(MbNiIbHc_4.shape[0])]
+    # names += [f'Fusion(equal) randinit{i}' for i in range(MbNiIbHc_4.shape[0])]
+    n_parcels = [17] * len(parcels)
     smoothes = [0] * len(parcels)
 
     ### Evaluation on the task-based datasets
@@ -729,9 +787,17 @@ if __name__ == "__main__":
     #                 index=False, sep='\t')
 
     ### Evaluation on the HCP resting-state data
-    for r in [0,1,2,3]:
-        eval_HCP_group_parcellation(parcels, names, space='fs32k', K=n_parcels, train_smooth=smoothes,
-                                    test_smooth=None, subj_list=f'/subj_list/HCP203_test_set_filtered_1.tsv', out_file=r)
+    results = pd.DataFrame()
+    for r in [1]:
+        res = eval_HCP_group_parcellation(parcels, names, space='fs32k', K=n_parcels, train_smooth=smoothes,
+                                    test_smooth=None, subj_list=f'/subj_list/HCP200_test.tsv', out_file=r)
+        results = pd.concat([results, res], ignore_index=True)
+
+    results = pd.DataFrame()
+    for i in [1,2,3,4]:
+        df = pd.read_csv(f'/home/dzhi/eris_mount/dzhi/Indiv_par/Evaluations/eval_group_rest_vs_task_vs_fusion_K-17_on-HCPtest-task-contrasts-sm4_{i}.tsv',
+                         sep='\t')
+        results = pd.concat([results, df], ignore_index=True)
 
     ## Plot results
     results = pd.read_csv(f'/home/dzhi/eris_mount/dzhi/Indiv_par/Evaluations/eval_group-random_K-10-30_sm6-masked_on-MSC-task-contrasts.tsv', sep='\t')

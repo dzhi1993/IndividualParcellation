@@ -56,7 +56,7 @@ if not Path(ERIS_DIR).exists():
     raise (NameError('Could not find hcp_dir'))
 
 # pytorch cuda global flag: True - cuda; False - cpu
-pt.cuda.is_available = lambda : True
+pt.cuda.is_available = lambda : False
 if pt.cuda.is_available():
     DEVICE = 'cuda'
 else:
@@ -368,25 +368,22 @@ if __name__ == "__main__":
     fc_type = 'Ico642Run'
     ext = '_binarized'
     K=17
-    group_strength_list = [1,2,5,10,20,30]
-    spatial_list = [0,1,2,5,10,15]
+    group_strength_list = [2]
+    spatial_list = [2]
+    hcp_tasks = ['EMOTION', 'GAMBLING', 'LANGUAGE', 'MOTOR', 'RELATIONAL', 'SOCIAL', 'WM']
 
     ######## Step 2. Generate group / indiv parcellations
     ## laod Kong 2019 17net - HCP40
-    # align, net_name, colors = ut.get_kong2019_group_parcellation()
-    # align = pt.tensor(align, dtype=pt.get_default_dtype(), device=DEVICE)
-
-    # Load DU15 networks
-    DU15, net_name, colors = gp.get_DU15_parcellation(file_name='DU15NET_Prior', atlas_space='fs32k')
-    DU15 = ar.expand_mn_1d(DU15, K=16)
-    align = DU15[1:,:]
+    align, net_name, colors = ut.get_kong2019_group_parcellation()
+    align = pt.tensor(align, dtype=pt.get_default_dtype(), device=DEVICE)
 
     ## Load the group prior from a pre-trained model
-    # model_name = f'/Models_03/asym_Hc_space-fs32k_K-15_HCP40-Kong_ROI1483Run_sm6fwhm_binarized' # resting 15
-    model_name = f'/Models_03/task_fusion/asym_MdNiIbHc_space-fs32k_K-15_sm6fwhm_binarized_Ib-jointsess_DU15-inits' # task 15
-    # model_name = f'/Models_03/asym_Hc_space-fs32k_K-17_HCPsubjects-800' # resting 17
-    # model_name = f'/Models_03/task_fusion/asym_MdNiIbWmDeSoHc_space-fs32k_K-17_sm6fwhm_binarized_Ib-jointsess_equalweights'  # task 17
-    U, _ = hut.load_group_parcellation(MODEL_DIR + model_name, device=DEVICE)
+    # model_name = f'/Models_03/asym_Hc_space-fs32k_K-17_HCPsubjects-800' # resting 17 800subj
+    # model_name = f'/Models_03/task_fusion/asym_Hc_space-fs32k_K-17_HCP40-Kong_ROI1483Run_sm6fwhm_binarized' # resting 17 kong40subject(idx=32)
+    # model_name = f'/Models_03/task_fusion/asym_MdNiIbWmDeSoHc_space-fs32k_K-17_sm6fwhm_binarized_Ib-jointsess_equalweights'  # fusion 17 (6 datasets)
+    model_name = f'/Models_03/task_fusion/asym_MdNiIbHc_space-fs32k_K-17_sm6fwhm_binarized_Ib-jointsess' # fusion 17 (3 datasets)
+    # model_name = f'/Models_03/task_fusion/asym_MdNiIb_space-fs32k_K-17_arrange-independent_sm6fwhm_zstat_masked-hi0.1lo0.1'  # task 17 (3 datasets)
+    U, _ = hut.load_group_parcellation(MODEL_DIR + model_name, index=None, device=DEVICE)
     # Vs, _ = em.load_emission_params(fname, 'V', device=DEVICE) # list of N*K matrix
     # U = atlas.cifti_to_data(ERIS_DIR + '/dzhi/workspace/res/priors/MSHBM_group_prior_HCP40training_k-15.dscalar.nii') # MSHBM 15
     # U = pt.tensor(U, dtype=pt.get_default_dtype(), device=DEVICE)
@@ -395,201 +392,233 @@ if __name__ == "__main__":
     U = U[indx, :]
     U = pt.softmax(U, dim=0)
     # Vs = [v[:,indx] for v in Vs]
+    # U = align
+    Pgroup = pt.argmax(U, dim=0) + 1
 
+    ## Determine the connectivity profile for mRBM
+    Wc = pt.load(ERIS_DIR + '/Tian/UKBB_full/imaging/Atlases/tpl-fs32k/fs32k_neighbours.pt', weights_only=True)
+    hut.report_cuda_memory()
 
-    for global_counter in range(1,2):
+    for global_counter in [1,2,3,4]:
+        subj_list_file = f"HCP200_test_{global_counter}.tsv"
         ######## Step 1. Load subjects individual training data
-        print(f'Start loading data {global_counter}: RANDY resting - {training_ses}, {fc_type} {ext} ...')
+        print(f'Start loading data {global_counter}: HCP resting - {training_ses}, {fc_type} {ext} ...')
         tic = time.perf_counter()
         ## HCP task data
-        # data1, cond_vec1, part_vec1, subj_ind1, t_info = gp.build_hcp_datasets(HCP_DIR, f'subj_list/HCP203_test_set_filtered_1.tsv',
+        # data1, cond_vec1, part_vec1, subj_ind1, t_info = gp.build_hcp_datasets(HCP_DIR, f'subj_list/{subj_list_file}',
         #                                                            atlas, ses_list=['ses-task'],
         #                                      join_sess=False, join_sess_part=False,
         #                                      part_ind=['half'], part_num=None, cond_ind=['reg_id'],
         #                                      type=['CondHalf'], hemis=None, smooth='6fwhm_zstat_masked-hi0.1lo0.1')
-        # ## HCP resting data
-        # data, cond_vec, part_vec, subj_ind, rs_info = gp.build_hcp_datasets(HCP_DIR, f"subj_list/HCP203_test_set_filtered_{global_counter}.tsv",
-        #                                             atlas, ses_list=['ses-rest1'],
-        #                                             join_sess=False, join_sess_part=False,
-        #                                             part_ind='run', part_num=None, cond_ind=['net_id'],
-        #                                             type=['Ico642Run'], hemis=None, smooth='4fwhm_binarized')
-        #
-        # ## RANDY15 resting data
-        data = ut.build_resting_data('RANDY15', space='fs32k', ses_list=[f'ses-rest{sn}' for sn in range(1, 25)],
-                                     type='Ico642Run', subj=None, hemis=None, smooth=None)
-        cond_vec = [np.arange(1,1211)] * len(data)
-        part_vec = [np.ones(1210)] * len(data)
-        subj_ind = [np.arange(15)] * len(data)
+        ## HCP resting data
+        data_all, cond_vec_all, part_vec_all, subj_ind_all, rs_info = gp.build_hcp_datasets(HCP_DIR, f"subj_list/{subj_list_file}",
+                                                    atlas, ses_list=['ses-rest1'],
+                                                    join_sess=False, join_sess_part=False,
+                                                    part_ind='run', part_num=[1,2], cond_ind=['net_id'],
+                                                    type=['Ico642Run'], hemis=None, smooth='4fwhm_binarized')
 
-        # data = data1 + data2
-        # cond_vec = cond_vec1 + cond_vec2
-        # part_vec = part_vec1 + part_vec2
-        # subj_ind = subj_ind1 + subj_ind2
-        n_subj = np.unique(np.concatenate(subj_ind, axis=0)).size
+        for half in [1,2]:
+            # data = [data1[half-1]] + [data[1]]
+            data = [(d - np.mean(d, axis=1, keepdims=True)).astype(np.float32) for d in [data_all[half-1]]]
+            cond_vec = [cond_vec_all[half-1]]
+            part_vec = [part_vec_all[half-1]]
+            subj_ind = [subj_ind_all[half-1]]
+            n_subj = np.unique(np.concatenate(subj_ind, axis=0)).size
 
-        toc = time.perf_counter()
-        print(f'Done loading. Used {toc - tic:0.4f} seconds!')
-        hut.report_cuda_memory()
+            toc = time.perf_counter()
+            print(f'Done loading. Used {toc - tic:0.4f} seconds!')
+            hut.report_cuda_memory()
 
-        ## Determine the connectivity profile for mRBM
-        Wc = pt.load(ERIS_DIR + '/Tian/UKBB_full/imaging/Atlases/tpl-fs32k/fs32k_neighbours.pt', weights_only=True)
-        hut.report_cuda_memory()
+            # p = 1,30,60,90,120; w = 0,30,60,90,120
+            for counter_p, p in enumerate(group_strength_list):
+                for counter_w, w in enumerate(spatial_list):
+                    print(f'prior strength is {p}; the MRF strength is {w} ...')
+                    # m-RBM
+                    ar_model = ar.build_arrangement_model(U.clone(), prior_type='prob', atlas=atlas,
+                                                          sym_type='asym', model_type='cRBM_Wc',
+                                                          Wc=Wc, theta=w, epos_iter=20, num_chain=n_subj)
+                    ar_model.bu = ar_model.bu * p
 
-        # p = 1,30,60,90,120; w = 0,30,60,90,120
-        for counter_p, p in enumerate(group_strength_list):
-            for counter_w, w in enumerate(spatial_list):
-                print(f'prior strength is {p}; the MRF strength is {w} ...')
-                # m-RBM
-                ar_model = ar.build_arrangement_model(U.clone(), prior_type='prob', atlas=atlas,
-                                                      sym_type='asym', model_type='cRBM_Wc',
-                                                      Wc=Wc, theta=w, epos_iter=20, num_chain=n_subj)
-                ar_model.bu = ar_model.bu * p
+                    # Independent
+                    # ar_model = ar.build_arrangement_model(U.clone()*p, prior_type='logpi', atlas=atlas,
+                    #                                       sym_type='asym', model_type='independent')
 
-                # Independent
-                # ar_model = ar.build_arrangement_model(U*p, prior_type='logpi', atlas=atlas,
-                #                                       sym_type='asym', model_type='independent')
+                    U_indiv, _, M = fm.get_indiv_parcellation(ar_model, atlas, data,
+                                                            cond_vec, part_vec, subj_ind, Vs=None,
+                                                            sym_type='asym', n_iter=10 if ar_model.name == 'cRBM_Wc' else 200,
+                                                            em_params={'num_subj': n_subj,
+                                                                        'uniform_kappa': True,
+                                                                        'subjects_equal_weight':True,
+                                                                        'subject_specific_kappa': False,
+                                                                        'parcel_specific_kappa': False})
+                    Pindiv = pt.argmax(U_indiv, dim=1) + 1
+                    np.save(MODEL_DIR + f'/Models_03/indiv_parcellation/HCP200_test_set/prob' +
+                            f'/asym_MdNiIbHc+HCPrest-1run{half}-indiv_space-fs32k_K-17_Ico642Run_groupstrengh-{p}_spatial-{w}_{global_counter}.npy',
+                            U_indiv.cpu().numpy())
 
-                U_indiv, _, M = fm.get_indiv_parcellation(ar_model, atlas, data,
-                                                        cond_vec, part_vec, subj_ind, Vs=None,
-                                                        sym_type='asym', n_iter=10,
-                                                        em_params={'num_subj': n_subj,
-                                                                    'uniform_kappa': True,
-                                                                    'subjects_equal_weight':True,
-                                                                    'subject_specific_kappa': False,
-                                                                    'parcel_specific_kappa': False})
-                Pindiv = pt.argmax(U_indiv, dim=1) + 1
+                    del M
+                    pt.cuda.empty_cache()
+                    hut.report_cuda_memory()
 
-                del M
-                pt.cuda.empty_cache()
-                hut.report_cuda_memory()
+                    ## Save indiv parcellation in cifti
+                    T = pd.read_csv(HCP_DIR + f"/subj_list/{subj_list_file}", sep='\t')
+                    img = nt.make_label_cifti(Pindiv.T.cpu().numpy(), atlas.get_brain_model_axis(),
+                                            column_names=[f'{i}' for i in T.participant_id],
+                                            label_names=net_name, label_RGBA=colors)
+                    nb.save(img, MODEL_DIR + f'/Models_03/indiv_parcellation/HCP200_test_set' +
+                            f'/asym_MdNiIbHc+HCPrest-1run{half}-indiv_space-fs32k_K-17_Ico642Run_groupstrengh-{p}_spatial-{w}_{global_counter}.dlabel.nii')
 
-                ## Save indiv parcellation in cifti
-                # T = pd.read_csv(HCP_DIR + f"/subj_list/HCP203_test_set_filtered_{global_counter}.tsv", sep='\t')
-                T = pd.read_csv(ERIS_DIR + f"/Tian/RANDY15/participants.tsv", sep='\t')
-                img = nt.make_label_cifti(Pindiv.T.cpu().numpy(), atlas.get_brain_model_axis(),
-                                        column_names=[f'{i}' for i in T.participant_id],
-                                        label_names=net_name, label_RGBA=colors)
-                nb.save(img, MODEL_DIR + f'/Models_03/indiv_parcellation/RANDY15_test_set' +
-                        f'/asym_MdNiIbHc+RANDYrest-allrun-indiv_space-fs32k_K-{K}_{fc_type}_groupstrengh-{p}_spatial-{w}.dlabel.nii')
+    # Combine all test subjects parcellation
+    indiv_par = []
+    # colors[[1, 6]] = colors[[6, 1]]
+    for i in [1, 2, 3, 4]:
+        par = nb.load(MODEL_DIR + f'/Models_03/indiv_parcellation/HCP200_test_set' +
+                    f'/asym_MdNiIbHc+HCPrest-2261s2-indiv_space-fs32k_K-17_Ico642Run_groupstrengh-1_spatial-1_{i}.dlabel.nii').get_fdata()[:]
+        indiv_par.append(par)
+    indiv_par = np.vstack(indiv_par)
+    T = pd.read_csv(HCP_DIR + f"/subj_list/HCP200_test.tsv", sep='\t')
+    img = nt.make_label_cifti(indiv_par.T, atlas.get_brain_model_axis(),
+                              column_names=[f'{i}' for i in T.participant_id],
+                              label_names=net_name, label_RGBA=colors)
+    nb.save(img, MODEL_DIR + f'/Models_03/indiv_parcellation/HCP200_test_set' +
+            f'/asym_MdNiIbHc+HCPrest-2261s2-indiv_space-fs32k_K-17_Ico642Run_groupstrengh-1_spatial-1.dlabel.nii')
+
 
     ####################################################################################################################
     ## Evaluation
     ######## Step 2. Load HCP test data for indiv parcellation
-    print(f'Start loading data: HCP resting - {test_ses} - Tseries ...')
-    tic = time.perf_counter()
-    ## 1. HCP task contrasts
-    # t_data, t_info = ut.load_hcp_contrasts(HCP_DIR, "/subj_list/HCP203_test_set_filtered_1.tsv", space='fs32k',
-    #                                        hemis=None, smooth='4_MSMAll')
-    ## 2. HCP resting state time series
-    # t_data = ut.load_hcp_timeseries(HCP_DIR, "subj_list/HCP203_test_set_filtered_1.tsv",
-    #                             space=atlas.name, run_list=[2,3],
-    #                             type='Tseries', hemis=None, smooth='4fwhm')
-    ## 3. RANDY task contrasts
-    t_data, t_info = ut.load_randy_contrasts(space='fs32k', subj=None, hemis=None, smooth=2)
-
-    toc = time.perf_counter()
-    print(f'Done loading. Used {toc - tic:0.4f} seconds!')
-    hut.report_cuda_memory()
-    n_subj = t_data[0].shape[0]
-
     ## Making distance metric
     dist = pt.load(BASE_DIR + '/Atlases/tpl-fs32k/distGOD_fs32k.pt', weights_only=True)
 
     results = pd.DataFrame()
-    for counter_p, p in enumerate(group_strength_list):
-        for counter_w, w in enumerate(spatial_list):
-            # Load indiv parcellation
-            Pindiv = nb.load(MODEL_DIR + f'/Models_03/indiv_parcellation/RANDY15_test_set' +
-                    f'/asym_MdNiIbHc+RANDYrest-allrun-indiv_space-fs32k_K-{K}_{fc_type}_groupstrengh-{p}_spatial-{w}.dlabel.nii').get_fdata()[:]
-            Pindiv = pt.tensor(Pindiv, dtype=pt.get_default_dtype(), device=DEVICE)
-            # Load Kong2019 individual parcellations
-            # Pindiv = ut.get_kong2019_indiv_parcellations(ERIS_DIR + '/dzhi/workspace/res/ind_parcellation/HCP203_test_set',
-            #                     HCP_DIR + "/subj_list/HCP203_test_set_filtered_1.tsv",
-            #                     w=100, c=30, num_sess=2)
-            Pindiv = pt.where(Pindiv == 0, pt.nan, Pindiv)
+    for global_counter in [1, 2, 3, 4]:
+        subj_list_file = f"HCP200_test_{global_counter}.tsv"
+        T = pd.read_csv(HCP_DIR + f"/subj_list/{subj_list_file}", sep='\t')
 
-            # Take the test hemisphere
-            # stru_idx = atlas.structure.index(hemis_dict[test_hemis])
-            # Pindiv = Pindiv[:,atlas.indx_full[stru_idx]]
-            Pgroup = pt.argmax(pt.softmax(U, dim=0), dim=0) + 1
-            # Pgroup = Pgroup[atlas.indx_full[stru_idx]]
+        print(f'Start loading data: HCP {global_counter} test data ...')
+        tic = time.perf_counter()
+        ## 1. HCP task contrasts
+        # t_data, t_info = ut.load_hcp_contrasts(HCP_DIR, "/subj_list/HCP200_test_1.tsv", space='fs32k',
+        #                                        return_positive=True, hemis=None, smooth='4_MSMAll')
+        ## 2. HCP resting state time series
+        # t_data = ut.load_hcp_timeseries(HCP_DIR, "subj_list/HCP203_test_set_filtered_1.tsv",
+        #                             space=atlas.name, run_list=[2,3],
+        #                             type='Tseries', hemis=None, smooth='4fwhm')
 
-            # Making evaluation information
-            minfo = ge.make_eval_info(K, train_info=['HCP'], train_sess='run-2',
-                                        tdata='HCP', test_sess='contrasts',
-                                        model_type='Models_03', group_map_name='MdNiIbWmDeSoHc',
-                                        test_kappa=None)
+        ## 3. HCP task betas
+        t_data, _, _, _, t_info = ut.build_hcp_datasets(HCP_DIR, f"/subj_list/{subj_list_file}",
+                                                        atlas, ses_list=['ses-task'], join_sess=False, join_sess_part=False,
+                                                        part_ind=['half'], part_num=None, cond_ind=['reg_id'],
+                                                        type=['ZstatHalf'], hemis=None, smooth='4fwhm')
+        # t_data = [t_data[1]]
+        t_info = np.array_split(t_info, 2)[0]
+        contrast_idx = t_info['positive'] == 1
+        t_info = t_info[contrast_idx]
+        t_data = [d[:,contrast_idx,:] for d in t_data]
 
-            t_info['task_name']=[s.rstrip('2') for s in t_info.task_name]
-            this_res = pd.DataFrame()
-            # Evaluate on each run's time series
-            for r, td in enumerate(t_data):
-                if type(td) is np.ndarray:
-                    td = pt.tensor(td, dtype=pt.get_default_dtype())
+        toc = time.perf_counter()
+        print(f'Done loading. Used {toc - tic:0.4f} seconds!')
+        hut.report_cuda_memory()
+        n_subj = t_data[0].shape[0]
 
-                tasks_list = ['all']
-                for task in tasks_list:
-                    if task == 'all':
-                        idx = [True] * len(t_info)
-                    else:
-                        idx = t_info['task_name'] == task
+        for half in [1,2]:
+            for counter_p, p in enumerate(group_strength_list):
+                for counter_w, w in enumerate(spatial_list):
+                    # Load indiv parcellation
+                    Pindiv = nb.load(MODEL_DIR + f'/Models_03/indiv_parcellation/HCP200_test_set' +
+                            f'/asym_MdNiIbHc+task-half{half}-sm6zstat_masked-indiv_space-fs32k_K-17_Ico642Run_groupstrengh-{p}_spatial-{w}.dlabel.nii').get_fdata()[:]
+                    Pindiv = pt.tensor(Pindiv, dtype=pt.get_default_dtype(), device=DEVICE)
+                    # Load Kong2019 individual parcellations
+                    # Pindiv = ut.get_kong2019_indiv_parcellations(ERIS_DIR + '/dzhi/workspace/res/ind_parcellation/HCP203_test_set',
+                    #                     HCP_DIR + "/subj_list/HCP203_test_set_filtered_1.tsv",
+                    #                     w=100, c=30, num_sess=2)
+                    Pindiv = pt.where(Pindiv == 0, pt.nan, Pindiv)
 
-                    res = pd.DataFrame({'atlas': [minfo.atlas] * n_subj,
-                            'K': [minfo.K] * n_subj,
-                            'train_data': [minfo.datasets] * n_subj,
-                            'train_sess': [minfo.train_sess] * n_subj,
-                            'test_data': [minfo.test_data] * n_subj,
-                            'test_sess': [minfo.test_sess] * n_subj,
-                            'model_type': [minfo.model_type] * n_subj,
-                            'group_map_name': [minfo.group_map_name] * n_subj,
-                            'subj_num': np.arange(n_subj),
-                            'indiv_test_kappa': [minfo.indiv_test_kappa] * n_subj})
+                    HCP200_list = pd.read_csv(HCP_DIR + f"/subj_list/HCP200_test.tsv", sep='\t')
+                    idx = HCP200_list.index[HCP200_list['participant_id'].isin(T['participant_id'])]
+                    Pindiv = Pindiv[idx]
 
-                    # Individual evaluation
-                    # homo_indiv = ev.calc_test_homogeneity(Pindiv, td[:,idx,:])
-                    zvalue_indiv = ev.calc_test_zvalue(Pindiv, td[:,idx,:], return_single=False)
-                    np.save(MODEL_DIR + f'/Models_03/indiv_parcellation/RANDY15_test_set/zvalues' +
-                            f'/zvalue_indiv_asym_MdNiIbHc+RANDYrest-allrun-indiv_K-{K}_strengh-{p}_spatial-{w}_sm2.npy',
-                            zvalue_indiv.cpu().numpy())
-                    inhomo_nets = ev.calc_test_task_inhomogeneity(Pindiv, td[:, idx, :], return_single=False)
-                    inhomo_nets = pt.where(inhomo_nets == 0, pt.nan, inhomo_nets)
-                    np.save(MODEL_DIR + f'/Models_03/indiv_parcellation/RANDY15_test_set/inhomogeneity' +
-                            f'/inhomo_nets_asym_MdNiIbHc+RANDYrest-allrun-indiv_K-{K}_strengh-{p}_spatial-{w}_sm2.npy',
-                            inhomo_nets.cpu().numpy())
+                    # Making evaluation information
+                    minfo = ge.make_eval_info(K, train_info=['HCP'], train_sess=f'run-{half}',
+                                                tdata='HCP', test_sess='contrasts',
+                                                model_type='Models_03', group_map_name='MdNiIbHc',
+                                                test_kappa=None)
 
-                    inhomo_indiv = ev.calc_test_task_inhomogeneity(Pindiv, td[:,idx,:], return_single=True)
+                    t_info['task_name']=[s.rstrip('2') for s in t_info.task_name]
+                    this_res = pd.DataFrame()
+                    # Evaluate on each run's time series
+                    for r, td in enumerate([t_data[2-half]]):
+                        if type(td) is np.ndarray:
+                            td = pt.tensor(td, dtype=pt.get_default_dtype())
 
-                    ## Factorize DCBC calcuation
-                    hut.report_cuda_memory()
-                    dcbc_indiv = ev.calc_test_dcbc(Pindiv, td[:,idx,:], dist, trim_nan=True)
-                    pt.cuda.empty_cache()
-                    hut.report_cuda_memory()
+                        tasks_list = hcp_tasks + ['all']
+                        for task in tasks_list:
+                            if task == 'all':
+                                idx = [True] * len(t_info)
 
-                    res['dcbc_indiv'] = pt.where(dcbc_indiv == 0, pt.nan, dcbc_indiv).cpu().numpy()
-                    # res['homo_indiv'] = homo_indiv.cpu()
-                    res['inhomo_indiv'] = inhomo_indiv.cpu()
-                    res['task_name'] = task
-                    res['test_run'] = r + 1
-                    res['train_smooth'] = "6fwhm"
-                    res['test_smooth'] = None
-                    res['test_type'] = 'contrasts'
-                    this_res = pd.concat([this_res, res], ignore_index=True)
+                                # Individual evaluation
+                                # homo_indiv = ev.calc_test_homogeneity(Pindiv, td[:,idx,:])
+                                zvalue_indiv = ev.calc_test_zvalue(Pindiv, td[:, idx, :], return_single=False)
+                                np.save(MODEL_DIR + f'/Models_03/indiv_parcellation/HCP200_test_set/zvalues' +
+                                        f'/zvalue_indiv_asym_MdNiIbHc+HCPtask-half{half}-indiv_K-{K}_strengh-{p}_spatial-{w}_zstat-sm4_{global_counter}.npy',
+                                        zvalue_indiv.cpu().numpy())
+                                inhomo_nets = ev.calc_test_task_inhomogeneity(Pindiv, td[:, idx, :], return_single=False)
+                                inhomo_nets = pt.where(inhomo_nets == 0, pt.nan, inhomo_nets)
+                                np.save(MODEL_DIR + f'/Models_03/indiv_parcellation/HCP200_test_set/inhomogeneity' +
+                                        f'/inhomo_nets_asym_MdNiIbHc+HCPtask-half{half}-indiv_K-{K}_strengh-{p}_spatial-{w}_zstat-sm4_{global_counter}.npy',
+                                        inhomo_nets.cpu().numpy())
 
-            # QC
-            dice = [hev.dice_coefficient(Pgroup, Pindiv[i], label_matching=True).item()
-                            for i in range(Pindiv.shape[0])]
-            # ari = [hev.ARI(pt.argmax(U, dim=0), pt.argmax(U_indiv, dim=1)[i]).item()
-            #     for i in range(U_indiv.shape[0])]
-            # nmi = [1- hev.nmi(pt.argmax(U, dim=0).cpu(), pt.argmax(U_indiv, dim=1)[i].cpu())
-            #     for i in range(U_indiv.shape[0])]
+                            else:
+                                idx = t_info['task_name'] == task
+                                idx = list(idx)
 
-            this_res['dice_group'] = dice * len(tasks_list)
-            # res['ari_group'] = ari
-            # res['nmi_group'] = nmi
-            this_res['strength'] = p
-            this_res['spatial_w'] = w
+                            res = pd.DataFrame({'atlas': [minfo.atlas] * n_subj,
+                                    'K': [minfo.K] * n_subj,
+                                    'train_data': [minfo.datasets] * n_subj,
+                                    'train_sess': [minfo.train_sess] * n_subj,
+                                    'test_data': [minfo.test_data] * n_subj,
+                                    'test_sess': [minfo.test_sess] * n_subj,
+                                    'model_type': [minfo.model_type] * n_subj,
+                                    'group_map_name': [minfo.group_map_name] * n_subj,
+                                    'subj_num': [f'{i}' for i in T.participant_id],
+                                    'indiv_test_kappa': [minfo.indiv_test_kappa] * n_subj})
 
-            results = pd.concat([results, this_res], ignore_index=True)
+                            hut.report_cuda_memory()
+                            inhomo_indiv = ev.calc_test_task_inhomogeneity(Pindiv, td[:,idx,:], return_single=True)
+                            pt.cuda.empty_cache()
+                            hut.report_cuda_memory()
+
+                            ## Factorize DCBC calcuation
+                            hut.report_cuda_memory()
+                            dcbc_indiv = ev.calc_test_dcbc(Pindiv, td[:,idx,:], dist, trim_nan=True)
+                            pt.cuda.empty_cache()
+                            hut.report_cuda_memory()
+
+                            res['dcbc_indiv'] = pt.where(dcbc_indiv == 0, pt.nan, dcbc_indiv).cpu().numpy()
+                            # res['homo_indiv'] = homo_indiv.cpu()
+                            res['inhomo_indiv'] = inhomo_indiv.cpu()
+                            res['task_name'] = task
+                            res['test_run'] = 3-half
+                            res['train_smooth'] = "6fwhm"
+                            res['test_smooth'] = None
+                            res['test_type'] = 'contrasts'
+                            this_res = pd.concat([this_res, res], ignore_index=True)
+
+                    # QC
+                    dice = [hev.dice_coefficient(Pgroup, Pindiv[i], label_matching=True).item()
+                                    for i in range(Pindiv.shape[0])]
+                    # ari = [hev.ARI(pt.argmax(U, dim=0), pt.argmax(U_indiv, dim=1)[i]).item()
+                    #     for i in range(U_indiv.shape[0])]
+                    # nmi = [1- hev.nmi(pt.argmax(U, dim=0).cpu(), pt.argmax(U_indiv, dim=1)[i].cpu())
+                    #     for i in range(U_indiv.shape[0])]
+
+                    this_res['dice_group'] = dice * len(tasks_list) * len([t_data[2-half]])
+                    # res['ari_group'] = ari
+                    # res['nmi_group'] = nmi
+                    this_res['strength'] = p
+                    this_res['spatial_w'] = w
+
+                    results = pd.concat([results, this_res], ignore_index=True)
 
     results.to_csv(
         RES_DIR + f'/eval_MdNiIbHc+RANDYrest-allrun_K-15_indiv-mRBM_test_on_RANDYtask-contrast_sm2.tsv',
