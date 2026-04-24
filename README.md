@@ -1,97 +1,91 @@
-IndividualParcellation
-====
-This repository hosts a general pipeline to generate individual cerebellar parcellations under a 
-hierarchical Bayesian brain parcellation framework
-([HierarchBayesParcel](https://github.com/DiedrichsenLab/HierarchBayesParcel)) using individual 
-localizing data. Mathematical details can be found in the 
-[paper](https://www.biorxiv.org/content/10.1101/2023.05.24.542121v1).
+# IndividualParcellation
 
-Reference
-------
-If you use this pipeline, please cite the following paper:
-* Zhi, D., Shahshahani, L., Nettekoven, C., Pinho, A. L. Bzdok, D., Diedrichsen, J., (2023). 
-"A hierarchical Bayesian brain parcellation framework for fusion of functional imaging datasets". 
-BioRxiv. [[link]](https://www.biorxiv.org/content/10.1101/2023.05.24.542121v1)
+This repository contains code for generating and evaluating individual cerebellar parcellations with a hierarchical Bayesian framework built on top of [HierarchBayesParcel](https://github.com/DiedrichsenLab/HierarchBayesParcel). It combines group atlas information with subject-level localizer data to produce individual maps and the manuscript analyses derived from those maps.
 
-Dependencies
-------
-### Packages
-This project depends on several third party libraries, including: [numpy](https://numpy.org/), 
-[PyTorch](https://pytorch.org/), [nilearn](https://nilearn.github.io/stable/index.html),
-[nibabel](https://nipy.org/nibabel/), and so on. Please find the `requirements.txt ` for more 
-details and their version.
+Mathematical details are described in the paper:
 
-To successfully implement this pipeline, some packages from our group are also required, including 
-[HierarchBayesParcel](https://github.com/DiedrichsenLab/HierarchBayesParcel), 
-[Functional_Fusion](https://github.com/DiedrichsenLab/Functional_Fusion), 
-[FusionModel](https://github.com/DiedrichsenLab/FusionModel), 
-[SUITPy](https://suitpy.readthedocs.io/en/latest/index.html), and 
-[nitools](https://nitools.readthedocs.io/en/latest/) packages. See the `READ.ME` in those repos 
-for installation details.
+- Zhi, D., Shahshahani, L., Nettekoven, C., Pinho, A. L., Bzdok, D., Diedrichsen, J. (2023). "A hierarchical Bayesian brain parcellation framework for fusion of functional imaging datasets." [bioRxiv](https://www.biorxiv.org/content/10.1101/2023.05.24.542121v1)
 
-### Calling structure
-This pipeline is built on top of three basic packages: `HierarchBayesParcel`, `Functional_Fusion`,
-and `FusionModel`. The `HierarchBayesParcel` package has all the basic functions of comptuational
-modeling, including the model structure, the model fitting, and the model evaluation. The 
-`Functional_Fusion` package has all the functions of data processing. The `FusionModel` package
-hosts all the intermediate functions that connect the `HierarchBayesParcel` and the 
-`Functional_Fusion` projects. The calling structure as shown below:
+## What this repository contains
 
-<div style="text-align:center">
-  <img src="docs/calling_structure.png" alt="ScreenShot" width="400" height="300">
-</div>
+- End-to-end scripts for fitting and applying individual parcellation models.
+- Evaluation utilities for HCP, RANDY, MSC, leave-one-out, and related comparisons.
+- Reproduction code for manuscript figure/result blocks.
+- Notebooks used for exploration, figure assembly, and method checks.
 
-### Installations
+## Repository layout
 
-1. **General dependent packages** can be installed using pip:
-    ```
-    pip install -r requirements.txt 
-    ```
-    or you can install the package manually from their most updated binary distribution via pip 
-    or conda by:
-    ```
-    pip install numpy matplotlib nibabel pandas torch SUITPy neuroimagingtools ...
-    ```
+- [scripts](./scripts): core pipeline scripts for model fitting, individual parcellation, and evaluation.
+- [scripts/result_2](./scripts/result_2): manuscript result block 2, focused on individual parcellation evaluation.
+- [scripts/result_3](./scripts/result_3): manuscript result block 3, focused on task coverage maps.
+- [scripts/result_4](./scripts/result_4): manuscript result block 4, focused on RANDY homogeneity analyses.
+- [scripts/result_5](./scripts/result_5): manuscript result block 5, focused on cosine-error and thresholding comparisons.
+- [scripts/result_6](./scripts/result_6): manuscript result block 6, focused on Dice-overlap analyses.
+- [notebooks](./notebooks): interactive notebooks for prototyping, evaluation, and figure generation.
+- [results](./results): output location for generated summaries, figures, or derived artifacts.
+- [docs](./docs): project documentation assets such as the pipeline calling-structure diagram.
+- [global_config.py](./global_config.py): machine-specific path and runtime configuration used by many scripts.
 
-2. **HierarchBayesParcel**, **Functional_Fusion**, and **FusionModel**:
+## Result section folders
 
-    **MacOS/Linux**
-    
-    Once you have cloned these repository, you need to add their parent dir to your PYTHONPATH, so 
-    you can import the functionality. Add these lines to your .bash_profile, .bash_rc .zsh_profile 
-    file... 
-    
-    ```
-    export PYTHONPATH=<abspath_of_repo_parentdir>:$PYTHONPATH
-    ```
-    **Windows**
-    Add the parent dir of these repos to `Environment Variables...` -> `System variables`->`Path`
-    in Windows System Properties setting. 
+Each result folder has its own local README with script-level detail. The top-level summary is:
 
+- [scripts/result_2](./scripts/result_2): evaluates individual parcellations, including comparisons between the HBP pipeline and the MSHBM baseline.
+- [scripts/result_3](./scripts/result_3): generates task coverage maps used in the manuscript.
+- [scripts/result_4](./scripts/result_4): runs subject-level and aggregate homogeneity analyses on the RANDY dataset.
+- [scripts/result_5](./scripts/result_5): computes cosine-error analyses and thresholding-based comparison baselines.
+- [scripts/result_6](./scripts/result_6): computes Dice-overlap analyses for individual parcellations across datasets.
 
-Individual parcellation pipeline
-------
-### 1. Load the atlas
+## Core workflow
 
-### 2: Load the probabilistic group atlas from a _probseg.nii file
+The typical workflow in this repository is:
 
-### Step 3: Build the arrangement model
+1. Configure dataset and model paths in [global_config.py](./global_config.py).
+2. Load atlas and pretrained group model resources.
+3. Load subject-level localizer or evaluation data.
+4. Run the individual parcellation pipeline from scripts such as [scripts/individual_parcellation.py](./scripts/individual_parcellation.py).
+5. Evaluate outputs with the relevant scripts in [scripts](./scripts) or the manuscript-specific `scripts/result_*` folders.
 
-### Step 4: Load the individual localizing data / info 
+## Dependencies
 
-### Step 5: Compute the individual parcellations
+This project depends on standard scientific Python packages listed in [requirements.txt](./requirements.txt), including `numpy`, `pandas`, `matplotlib`, `nibabel`, `nilearn`, and `torch`.
 
-### Step 6: Check the results / Visualization
+It also depends on the following packages:
+
+- [HierarchBayesParcel](https://github.com/DiedrichsenLab/HierarchBayesParcel)
+- [Functional_Fusion](https://github.com/DiedrichsenLab/Functional_Fusion)
+- [FusionModel](https://github.com/DiedrichsenLab/FusionModel)
+- [SUITPy](https://suitpy.readthedocs.io/en/latest/index.html)
+- [nitools](https://nitools.readthedocs.io/en/latest/)
+
+Install the general Python dependencies with:
+
+```bash
+pip install -r requirements.txt
+```
+
+For the lab packages above, clone the repositories and add their parent directory to `PYTHONPATH`.
+
+On macOS/Linux:
+
+```bash
+export PYTHONPATH=<path_to_repo_parent>:$PYTHONPATH
+```
+
+On Windows, add the same parent directory to the system `Path` or Python environment configuration.
+
+## Notes on portability
+
+- Many scripts assume local lab storage layouts or dataset mounts configured in [global_config.py](./global_config.py).
+- Some manuscript reproduction scripts still contain machine-specific assumptions and should be treated as research code rather than stable public CLI tools.
+- The `scripts/result_*` folders are best understood as result-reproduction modules tied to the paper figures.
 
 
-Group map training
-------
 
+## License
 
-License
-------
-Please find out our development license (MIT) in `LICENSE` file.
+This project is released under the MIT license. See [LICENSE](./LICENSE).
 
-Bug reports
-------
-Please contact Da Zhi at dzhi@uwo.ca if you have any questions about this repository.
+## Contact
+
+For questions or bug reports, contact Da Zhi at `dzhi@mgh.harvard.edu`.
