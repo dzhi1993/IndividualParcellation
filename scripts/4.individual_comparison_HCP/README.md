@@ -1,15 +1,15 @@
 # Figure Result 4
 
-This folder contains scripts used for the fourth paper result/figure block, focused on RANDY dataset individual-map homogeneity analyses.
+This folder contains scripts used for the fourth paper result/figure block, focused on HPN dataset individual-map homogeneity analyses.
 
 ## Scripts
 
-- `homo_indiv_randy.py`: computes or summarizes homogeneity metrics for individual parcellations on the RANDY dataset.
-- `indiv_randy_subjects.py`: supports subject-level RANDY analyses used in the same result block.
+- HPN homogeneity analysis script: computes or summarizes homogeneity metrics for individual parcellations on the HPN dataset.
+- HPN subject-level analysis script: supports subject-level HPN analyses used in the same result block.
 
 ## Expected inputs
 
-- RANDY dataset files available at the locations expected by the scripts.
+- HPN dataset files available at the locations expected by the scripts.
 - HCP subject-list support files under `../../replication/subject_list` where required.
 - Model outputs and auxiliary resources from the project dependencies.
 

@@ -5,12 +5,12 @@ This folder contains scripts used for the fifth paper result/figure block, focus
 ## Scripts
 
 - `indiv_coserr_hcp.py`: computes cosine-error analyses for HCP individual parcellations.
-- `indiv_coserr_randy.py`: computes cosine-error analyses for RANDY individual parcellations.
+- HPN cosine-error analysis script: computes cosine-error analyses for HPN individual parcellations.
 - `naive_thresholding.py`: evaluates or visualizes thresholding-based comparison baselines.
 
 ## Expected inputs
 
-- HCP and RANDY evaluation data.
+- HCP and HPN evaluation data.
 - HCP subject-list support files under `../../replication/subject_list`.
 - Trained model outputs and atlas resources.
 - External dependencies from the Diedrichsen lab software stack.

@@ -5,7 +5,7 @@ This folder contains scripts used for the sixth paper result/figure block, focus
 ## Scripts
 
 - `dice_overlap_hcp.py`: computes Dice-overlap results for HCP individual parcellations.
-- `dice_overlap_randy.py`: computes Dice-overlap results for RANDY individual parcellations.
+- HPN Dice-overlap script: computes Dice-overlap results for HPN individual parcellations.
 
 ## Expected inputs
 
