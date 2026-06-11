@@ -6,7 +6,9 @@ Script of evaluate the individual parcellation results
 Created on 12/4/2023 at 4:22 PM
 Author: dzhi
 """
+import argparse
 import time, sys, json
+from pathlib import Path
 import numpy as np
 import torch as pt
 import nibabel as nb
@@ -30,7 +32,13 @@ import utils as ut
 from IndividualParcellation.scripts.group_parcellation import build_ukb_datasets, build_hcp_datasets, load_hcp_timeseries, load_hcp_task_contrast
 from global_config import MODEL_DIR, BASE_DIR, ATLAS_DIR
 HCP_DIR = '/home/dzhi/eris_mount/Tian/HCP_img'
-RESULT_DIR = '/home/dzhi/eris_mount/dzhi/Indiv_par/Results'
+REPO_ROOT = Path(__file__).resolve().parents[1]
+RESULTS_DIR = REPO_ROOT / 'results'
+REPLICATION_DIR = REPO_ROOT / 'replication'
+RESULT_DIR = str(REPLICATION_DIR / 'group_parcellations')
+EVAL_DIR = RESULTS_DIR / 'group_eval'
+EVAL_DIR.mkdir(parents=True, exist_ok=True)
+EVAL_DIR = str(EVAL_DIR)
 # BRAIN_WISE = ['whole brain','whole brain','left hemisphere','whole brain',
 #                 'left hemisphere','left hemisphere','whole brain','whole brain',
 #                 'left hemisphere','left hemisphere','whole brain','whole brain']
@@ -53,8 +61,7 @@ def load_existing_atlas():
     data_dir = '/home/dzhi/eris_mount'
     ######## Evaluate MS-HBM group vs. HBP group parcellations
     YEO2011 = nb.load(data_dir + f'/dzhi/workspace/res/group/Yeo2011_17.dlabel.nii').get_fdata().reshape(-1)[0:29759]
-    KONG2019 = nb.load(data_dir + '/dzhi/Indiv_par/Kong_2019/group_prior' \
-                       '/HCP_40/Kong-2019_MSHBM_HCP40_hard.dlabel.nii').get_fdata().reshape(-1)[0:29759]
+    KONG2019 = np.argmax(ut.get_kong2019_group_parcellation()[0], axis=0)[0:29759] + 1
 
     Hc800 = atlas.cifti_to_data(data_dir + '/dzhi/Indiv_par/Models/Models_03/' \
                                 'asym_Hc_space-fs32k_K-17_HCPsubjects-800.dlabel.nii').reshape(-1)[0:29759]
@@ -426,7 +433,7 @@ def eval_UKB_group_indiv(smooth=[2,3,4,5,6], test_smooth=None, K=7,
             res['group_strength'] = p
             results = pd.concat([results, res], ignore_index=True)
     
-    results.to_csv(f'/data/tge/dzhi/Indiv_par/Evaluations/eval_all_UKB-736_K-7_split-{out_file}.tsv',
+    results.to_csv(EVAL_DIR + f'/eval_all_UKB-736_K-7_split-{out_file}.tsv',
                     index=False, sep='\t')
 
 
@@ -488,7 +495,7 @@ def eval_existing_vs_UKB736(model_names=[2,3,4,5,6], test_smooth=None, K=7,
         res['test_smooth'] = test_smooth
         results = pd.concat([results, res], ignore_index=True)
     
-    results.to_csv(f'/data/tge/dzhi/Indiv_par/Evaluations/eval_all_existing_vs_UKB736_split-{out_file}_sm-2.tsv',
+    results.to_csv(EVAL_DIR + f'/eval_all_existing_vs_UKB736_split-{out_file}_sm-2.tsv',
                     index=False, sep='\t')
     
 
@@ -592,7 +599,7 @@ def eval_HCP_group_parcellation(parcels, names, space='fs32k', test_ses='all', K
                 res['test_type'] = 'betas'
                 results = pd.concat([results, res], ignore_index=True)
     
-    # results.to_csv(f'/home/dzhi/eris_mount/dzhi/Indiv_par/Evaluations/eval_group_rest_vs_task_vs_fusion_K-17_on-HCPtest-task-allcontrasts_sm4_{out_file}.tsv',
+    # results.to_csv(EVAL_DIR + f'/eval_group_rest_vs_task_vs_fusion_K-17_on-HCPtest-task-allcontrasts_sm4_{out_file}.tsv',
     #                 index=False, sep='\t')
     return results
 
@@ -650,6 +657,603 @@ def eval_fs32k_group_parcellation(parcels, names, t_data, task_nam=None, space='
     return results
 
 
+def make_md_smoothing_group_atlas_specs(model_dir=None, K=17):
+    """Return the Md K=17 smoothing/masking atlas families to evaluate."""
+    model_dir = Path(model_dir) if model_dir is not None else Path(MODEL_DIR) / 'Models_03'
+    smooth_levels = [0, 2, 4, 6, 8, 10]
+
+    specs = []
+    for smooth in smooth_levels:
+        suffix = '' if smooth == 0 else f'_sm{smooth}fwhm'
+        specs.append({
+            'family': 'smoothed_only',
+            'processing_order': 'smooth_only',
+            'smooth_fwhm': smooth,
+            'name': f'Md_smooth-only_sm{smooth}',
+            'path': model_dir / f'asym_Md_space-fs32k_K-{K}{suffix}.dlabel.nii',
+        })
+
+    for smooth in smooth_levels:
+        suffix = '_masked-hi0.1lo0.1' if smooth == 0 else f'_masked-hi0.1lo0.1_desc-sm{smooth}fwhm'
+        specs.append({
+            'family': 'mask_then_smooth',
+            'processing_order': 'mask_then_smooth',
+            'smooth_fwhm': smooth,
+            'name': f'Md_mask-then-smooth_sm{smooth}',
+            'path': model_dir / f'asym_Md_space-fs32k_K-{K}{suffix}.dlabel.nii',
+        })
+
+    for smooth in [2, 4, 6, 8, 10]:
+        specs.append({
+            'family': 'smooth_then_mask',
+            'processing_order': 'smooth_then_mask',
+            'smooth_fwhm': smooth,
+            'name': f'Md_smooth-then-mask_sm{smooth}',
+            'path': model_dir / f'asym_Md_space-fs32k_K-{K}_sm{smooth}fwhm_masked-hi0.1lo0.1.dlabel.nii',
+        })
+
+    missing = [str(spec['path']) for spec in specs if not spec['path'].exists()]
+    if missing:
+        raise FileNotFoundError('Missing group atlas file(s):\n' + '\n'.join(missing))
+    return specs
+
+
+def load_group_atlas_from_dlabel(atlas, path):
+    """Load one dlabel group atlas and return a 1D parcel label vector."""
+    parcel = atlas.cifti_to_data(str(path))
+    parcel = np.asarray(parcel).squeeze()
+    if parcel.ndim > 1:
+        parcel = parcel[0]
+    return parcel.reshape(-1)
+
+
+def load_hcp_task_contrast_eval_data(atlas, subj_list_file, smooth='4_MSMAll',
+                                     positive_only=False):
+    """Load HCP task contrast dscalars using the indiv_eval_hcp path."""
+    t_data, t_info = ut.load_hcp_contrasts(
+        HCP_DIR, f'/subj_list/{subj_list_file}', space=atlas.name,
+        return_positive=positive_only, hemis=None, smooth=smooth)
+
+    if 'task_name' in t_info.columns:
+        t_info['task_name'] = [str(task).rstrip('2') for task in t_info.task_name]
+    return t_data, t_info
+
+
+def eval_md_smoothing_group_atlases_on_hcp_task(
+        subj_list_file='HCP200_test_1.tsv',
+        model_dir=None,
+        out_file=None,
+        test_smooth='4_MSMAll',
+        positive_only=False,
+        K=17):
+    """Evaluate Md smoothing/masking group atlases on HCP task contrasts."""
+    subj_list_file = Path(subj_list_file).name
+    atlas, _ = am.get_atlas('fs32k')
+    atlas.calculate_symmetry()
+    dist = pt.load(BASE_DIR + '/Atlases/tpl-fs32k/distGOD_fs32k.pt', weights_only=True)
+    specs = make_md_smoothing_group_atlas_specs(model_dir=model_dir, K=K)
+
+    print(f'Loading HCP task contrasts: {subj_list_file}, smooth={test_smooth} ...')
+    tic = time.perf_counter()
+    t_data, t_info = load_hcp_task_contrast_eval_data(
+        atlas, subj_list_file, smooth=test_smooth, positive_only=positive_only)
+    toc = time.perf_counter()
+    print(f'Done loading HCP task contrasts. Used {toc - tic:0.4f} seconds.')
+
+    subj_table = pd.read_csv(Path(HCP_DIR) / 'subj_list' / subj_list_file, sep='\t')
+    subj_ids = subj_table['participant_id'].to_list()
+    tasks = ['all']
+
+    results = pd.DataFrame()
+    for spec in specs:
+        print(f'Evaluating {spec["name"]}: {spec["path"].name}')
+        parcel = load_group_atlas_from_dlabel(atlas, spec['path'])
+        Pgroup = np.where(parcel == 0, np.nan, parcel)
+        eval_info = make_eval_info(
+            K, atlas='fs32k', train_info=['MDTB'], train_sess='all',
+            tdata='HCP', test_sess='task-contrasts',
+            model_type='Models_03', group_map_name=spec['name'],
+            test_kappa=None)
+
+        for test_idx, td in enumerate(t_data):
+            if type(td) is np.ndarray:
+                td = pt.tensor(td, dtype=pt.get_default_dtype())
+            for task in tasks:
+                if task == 'all':
+                    task_idx = np.ones(len(t_info), dtype=bool)
+                else:
+                    task_idx = (t_info['task_name'] == task).to_numpy()
+                if not np.any(task_idx):
+                    continue
+
+                res = eval_group_DCBC(Pgroup, td[:, task_idx, :], dist, eval_info,
+                                      subj_list=subj_ids)
+                res['atlas_family'] = spec['family']
+                res['processing_order'] = spec['processing_order']
+                res['smooth_fwhm'] = spec['smooth_fwhm']
+                res['atlas_file'] = spec['path'].name
+                res['train_smooth'] = spec['smooth_fwhm']
+                res['test_smooth'] = test_smooth
+                res['test_type'] = 'contrast'
+                res['test_run'] = test_idx
+                res['task_name'] = task
+                results = pd.concat([results, res], ignore_index=True)
+
+    if out_file is not None:
+        out_file = Path(out_file)
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        results.to_csv(out_file, index=False, sep='\t')
+        print(f'Saved evaluation results to {out_file}')
+    return results
+
+
+def find_md_smoothing_eval_files(out_dir=EVAL_DIR, test_smooth='4_MSMAll'):
+    """Find saved Md smoothing-family HCP contrast evaluation TSVs."""
+    pattern = f'eval_group-Md_smoothing-families_K-17_on-HCPtask-contrast-{test_smooth}_*.tsv'
+    return sorted(Path(out_dir).glob(pattern))
+
+
+def make_task_contrast_plot_input(result_files=None, out_dir=EVAL_DIR,
+                                  test_smooth='4_MSMAll', task_name='all'):
+    """Return the minimal raw rows needed for the HCP task-contrast plot."""
+    if result_files is None or len(result_files) == 0:
+        result_files = find_md_smoothing_eval_files(out_dir=out_dir, test_smooth=test_smooth)
+    else:
+        result_files = [Path(path) for path in result_files]
+    if not result_files:
+        raise FileNotFoundError(
+            f'No Md smoothing-family evaluation TSVs found in {out_dir!r} '
+            f'for test_smooth={test_smooth!r}.')
+
+    frames = []
+    for path in result_files:
+        if not path.exists():
+            raise FileNotFoundError(path)
+        frames.append(pd.read_csv(path, sep='\t'))
+    results = pd.concat(frames, ignore_index=True)
+    results = results.loc[results['task_name'] == task_name].copy()
+    if results.empty:
+        raise ValueError(f'No rows found for task_name={task_name!r}.')
+
+    hue_order = ['Smoothed only', 'Smooth -> mask']
+    results['atlas_family_label'] = pd.Series(index=results.index, dtype=object)
+    results.loc[results['atlas_family'] == 'smoothed_only', 'atlas_family_label'] = 'Smoothed only'
+    results.loc[results['atlas_family'] == 'smooth_then_mask', 'atlas_family_label'] = 'Smooth -> mask'
+    results.loc[
+        (results['atlas_family'] == 'mask_then_smooth') & (results['smooth_fwhm'] == 0),
+        'atlas_family_label'
+    ] = 'Smooth -> mask'
+    results['atlas_family_label'] = pd.Categorical(
+        results['atlas_family_label'], hue_order, ordered=True)
+    results = results.loc[results['atlas_family_label'].isin(hue_order)].copy()
+    smooth_order = sorted(
+        results.groupby('smooth_fwhm', observed=True)['atlas_family_label'].nunique()
+        .loc[lambda counts: counts == len(hue_order)]
+        .index
+        .to_list()
+    )
+    results = results.loc[results['smooth_fwhm'].isin(smooth_order)].copy()
+    return results[
+        ['smooth_fwhm', 'atlas_family_label', 'subj_num', 'dcbc_group', 'inhomo_group']
+    ].sort_values(['smooth_fwhm', 'atlas_family_label', 'subj_num']).reset_index(drop=True)
+
+
+def plot_grouped_bars_upper_sem(ax, summary, x_col, hue_col, mean_col, sem_col,
+                                x_order, hue_order, palette, total_width=0.76,
+                                capsize=4, edge_color='black',
+                                edge_width=1.0):
+    """Draw grouped bars with upper-only SEM error bars."""
+    x_positions = np.arange(len(x_order))
+    bar_width = total_width / len(hue_order)
+    for hue_idx, hue in enumerate(hue_order):
+        offsets = x_positions + (hue_idx - (len(hue_order) - 1) / 2) * bar_width
+        sub = summary.loc[summary[hue_col] == hue].set_index(x_col)
+        means = np.array([sub.loc[x, mean_col] if x in sub.index else np.nan for x in x_order], dtype=float)
+        sems = np.array([sub.loc[x, sem_col] if x in sub.index else np.nan for x in x_order], dtype=float)
+        yerr = np.vstack([np.zeros_like(sems), sems])
+        ax.bar(
+            offsets,
+            means,
+            width=bar_width,
+            label=hue,
+            color=palette[hue],
+            edgecolor=edge_color,
+            linewidth=edge_width,
+            yerr=yerr,
+            capsize=capsize,
+            error_kw={'elinewidth': edge_width, 'capthick': edge_width},
+        )
+    ax.set_xticks(x_positions)
+    ax.set_xticklabels(x_order)
+
+
+def plot_md_smoothing_group_eval(result_files=None, out_dir=EVAL_DIR,
+                                 test_smooth='4_MSMAll', task_name='all',
+                                 save_file=None):
+    """Plot group DCBC and task inhomogeneity for Md atlas families."""
+    results = make_task_contrast_plot_input(
+        result_files=result_files, out_dir=out_dir,
+        test_smooth=test_smooth, task_name=task_name)
+
+    family_order = ['Smoothed only', 'Smooth -> mask']
+    palette = {
+        'Smoothed only': '#C8C8C8',
+        'Smooth -> mask': '#595959',
+    }
+    hue_order = family_order
+    smooth_order = sorted(results['smooth_fwhm'].dropna().unique())
+
+    summary = (
+        results.groupby(['smooth_fwhm', 'atlas_family_label'], observed=True)
+        .agg(
+            n_subjects=('subj_num', 'nunique'),
+            dcbc_group_mean=('dcbc_group', 'mean'),
+            dcbc_group_sem=('dcbc_group', 'sem'),
+            inhomo_group_mean=('inhomo_group', 'mean'),
+            inhomo_group_sem=('inhomo_group', 'sem'),
+        )
+        .reset_index()
+        .sort_values(['smooth_fwhm', 'atlas_family_label'])
+    )
+    print(summary.to_string(index=False))
+
+    edge_color = 'black'
+    edge_width = 1.0
+    capsize = 4
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 6), sharex=True)
+    panels = [
+        ('dcbc_group_mean', 'dcbc_group_sem', 'Group DCBC'),
+        ('inhomo_group_mean', 'inhomo_group_sem', 'Group Task Inhomogeneity'),
+    ]
+
+    for ax, (mean_col, sem_col, title) in zip(axes, panels):
+        plot_grouped_bars_upper_sem(
+            ax, summary,
+            x_col='smooth_fwhm',
+            hue_col='atlas_family_label',
+            mean_col=mean_col,
+            sem_col=sem_col,
+            x_order=smooth_order,
+            hue_order=hue_order,
+            palette=palette,
+            total_width=0.76,
+            capsize=capsize,
+            edge_color=edge_color,
+            edge_width=edge_width,
+        )
+        ax.set_title(title)
+        ax.set_xlabel('Training smoothing (FWHM)')
+        ax.set_ylabel('Score')
+        ax.tick_params(axis='x', rotation=0)
+
+    axes[0].set_ylim(0, 0.07)
+    axes[1].set_ylim(0.92, 0.96)
+    axes[0].legend(title='Atlas family', frameon=False)
+    if axes[1].legend_ is not None:
+        axes[1].legend_.remove()
+    fig.suptitle(
+        f'Md group atlas smoothing/masking families\n'
+        f'Tested on HCP task contrasts ({test_smooth}, task={task_name})'
+    )
+    fig.tight_layout()
+
+    if save_file is None:
+        save_file = (
+            Path(out_dir) /
+            f'plot_group-Md_smoothing-families_K-17_on-HCPtask-contrast-{test_smooth}_task-{task_name}.pdf'
+        )
+    if save_file:
+        save_file = Path(save_file)
+        save_file.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_file, format=save_file.suffix.lstrip('.') or 'pdf')
+        print(f'Saved plot to {save_file}')
+    plt.show()
+    return fig, axes, results, summary
+
+
+def load_existing_md_hcp_rest_eval(out_dir=EVAL_DIR):
+    """Load the existing Md smoothing-family evaluations on HCP resting-state data."""
+    out_dir = Path(out_dir)
+    subj_table = pd.read_csv(Path(HCP_DIR) / 'subj_list' / 'HCP203_test_set.tsv', sep='\t')
+    subj_id_map = dict(enumerate(subj_table['participant_id'].to_list()))
+    family_specs = [
+        (
+            'eval_Md_K-17_sm0-10_on-HCPtest_split-{split}.tsv',
+            {
+                'Md_K-17_': 0,
+                'Md_K-17__sm2fwhm': 2,
+                'Md_K-17__sm4fwhm': 4,
+                'Md_K-17__sm6fwhm': 6,
+                'Md_K-17__sm8fwhm': 8,
+                'Md_K-17__sm10fwhm': 10,
+            },
+            'smooth_only',
+        ),
+        (
+            'eval_Md_K-17_sm0-10_masked_on-HCPtest_split-{split}.tsv',
+            {
+                'Md_K-17_sm2fwhm_masked': 2,
+                'Md_K-17_sm4fwhm_masked': 4,
+                'Md_K-17_sm6fwhm_masked': 6,
+                'Md_K-17_sm8fwhm_masked': 8,
+                'Md_K-17_sm10fwhm_masked': 10,
+            },
+            'smooth-mask',
+        ),
+        (
+            'eval_Md_K-17_masked_sm0-10_on-HCPtest_split-{split}.tsv',
+            {
+                'Md_K-17': 0,
+                'Md_K-17_desc-sm2fwhm': 2,
+                'Md_K-17_desc-sm4fwhm': 4,
+                'Md_K-17_desc-sm6fwhm': 6,
+                'Md_K-17_desc-sm8fwhm': 8,
+                'Md_K-17_desc-sm10fwhm': 10,
+            },
+            'mask-smooth',
+        ),
+    ]
+
+    frames = []
+    for file_template, smooth_map, atlas_type in family_specs:
+        for split in [1, 2, 3, 4]:
+            path = out_dir / file_template.format(split=split)
+            if not path.exists():
+                raise FileNotFoundError(path)
+            res = pd.read_csv(path, sep='\t')
+            res['train_smooth'] = res['group_map_name'].map(smooth_map)
+            if res['train_smooth'].isna().any():
+                missing_names = res.loc[res['train_smooth'].isna(), 'group_map_name'].unique()
+                raise ValueError(f'Unmapped group_map_name values in {path.name}: {missing_names}')
+            res['train_smooth'] = pd.to_numeric(res['train_smooth'], errors='raise')
+            global_subj_num = res['subj_num'] + (split - 1) * 50
+            res['subj_num'] = global_subj_num.map(subj_id_map)
+            if res['subj_num'].isna().any():
+                missing_ids = global_subj_num.loc[res['subj_num'].isna()].unique()
+                raise ValueError(f'Unmapped subject indices in {path.name}: {missing_ids}')
+            res['subj_num'] = res['subj_num'].astype(int)
+            res['type'] = atlas_type
+            res['source_file'] = path.name
+            frames.append(res)
+
+    return pd.concat(frames, ignore_index=True)
+
+
+def make_existing_hcp_rest_plot_input(out_dir=EVAL_DIR):
+    """Return the minimal raw rows needed for the HCP resting-state plot."""
+    results = load_existing_md_hcp_rest_eval(out_dir=out_dir)
+    type_order = ['smooth_only', 'smooth-mask']
+    results['plot_type'] = results['type'].astype(str)
+    results.loc[
+        (results['type'].astype(str) == 'mask-smooth') & (results['train_smooth'] == 0),
+        'plot_type'
+    ] = 'smooth-mask'
+    results['plot_type'] = pd.Categorical(results['plot_type'], type_order, ordered=True)
+    results = results.loc[results['plot_type'].isin(type_order)].copy()
+    smooth_order = sorted(
+        results.groupby('train_smooth', observed=True)['plot_type'].nunique()
+        .loc[lambda counts: counts == len(type_order)]
+        .index
+        .to_list()
+    )
+    results = results.loc[results['train_smooth'].isin(smooth_order)].copy()
+    return results[
+        ['train_smooth', 'plot_type', 'subj_num', 'test_run', 'dcbc_group', 'homo_group']
+    ].sort_values(['train_smooth', 'plot_type', 'subj_num', 'test_run']).reset_index(drop=True)
+
+
+def plot_existing_hcp_rest_group_eval(
+        result_files=None,
+        out_dir=EVAL_DIR,
+        save_file=None):
+    """Plot the existing Md group-atlas evaluations on HCP resting-state data."""
+    if result_files not in (None, []):
+        raise ValueError('This plot uses the fixed eval_Md_K-17 split files; do not pass --plot-files.')
+
+    results = make_existing_hcp_rest_plot_input(out_dir=out_dir)
+    type_order = ['smooth_only', 'smooth-mask']
+    smooth_order = sorted(results['train_smooth'].dropna().unique())
+    palette = {
+        'smooth_only': '#C8C8C8',
+        'smooth-mask': '#595959',
+    }
+    metrics = [
+        ('dcbc_group_mean', 'dcbc_group_sem', 'Group DCBC'),
+        ('homo_group_mean', 'homo_group_sem', 'Group Homogeneity'),
+    ]
+
+    summary = (
+        results.groupby(['train_smooth', 'plot_type'], observed=True)
+        .agg(**{
+            'n_observations': ('dcbc_group', 'count'),
+            'n_subjects': ('subj_num', 'nunique'),
+            'dcbc_group_mean': ('dcbc_group', 'mean'),
+            'dcbc_group_sem': ('dcbc_group', 'sem'),
+            'homo_group_mean': ('homo_group', 'mean'),
+            'homo_group_sem': ('homo_group', 'sem'),
+        })
+        .reset_index()
+        .sort_values(['train_smooth', 'plot_type'])
+    )
+    print(summary.to_string(index=False))
+
+    edge_color = 'black'
+    edge_width = 1.0
+    capsize = 4
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 6), sharex=True)
+    for ax, (mean_col, sem_col, title) in zip(axes, metrics):
+        plot_grouped_bars_upper_sem(
+            ax, summary,
+            x_col='train_smooth',
+            hue_col='plot_type',
+            mean_col=mean_col,
+            sem_col=sem_col,
+            x_order=smooth_order,
+            hue_order=type_order,
+            palette=palette,
+            total_width=0.76,
+            capsize=capsize,
+            edge_color=edge_color,
+            edge_width=edge_width,
+        )
+        ax.set_title(title)
+        ax.set_xlabel('Training smoothing (FWHM)')
+        ax.set_ylabel('Score')
+        ax.tick_params(axis='x', rotation=0)
+
+    axes[0].set_ylim(0, 0.03)
+    axes[1].set_ylim(0.04, 0.06)
+    axes[0].legend(title='Atlas family', frameon=False)
+    if axes[1].legend_ is not None:
+        axes[1].legend_.remove()
+
+    fig.suptitle('Existing Md group atlas smoothing/masking families\nTested on HCP resting-state data')
+    fig.tight_layout()
+
+    if save_file is None:
+        save_file = Path(out_dir) / 'plot_existing-Md-smoothing-families_on-HCPrest-Tseries.pdf'
+    if save_file:
+        save_file = Path(save_file)
+        save_file.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_file, format=save_file.suffix.lstrip('.') or 'pdf')
+        print(f'Saved plot to {save_file}')
+    plt.show()
+    return fig, axes, results, summary
+
+
+def parse_group_eval_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description='Evaluate Md smoothing/masking group atlases on HCP task contrasts.')
+    parser.add_argument(
+        '--eval-md-smoothing-hcp-task', action='store_true',
+        help='Run the Md smoothing/masking atlas-family evaluation.')
+    parser.add_argument(
+        '--plot-md-smoothing-hcp-task', action='store_true',
+        help='Plot saved Md smoothing/masking atlas-family HCP evaluation TSVs.')
+    parser.add_argument(
+        '--plot-existing-hcp-rest', action='store_true',
+        help='Plot existing group-atlas HCP resting-state evaluation TSVs.')
+    parser.add_argument(
+        '--export-plot-inputs', action='store_true',
+        help='Export compact TSV files containing the raw rows needed to recreate both plots.')
+    parser.add_argument(
+        '--split', default='4',
+        help="HCP200 test split to evaluate: 1, 2, 3, 4, or 'all'.")
+    parser.add_argument(
+        '--subj-list-file', default=None,
+        help='Explicit HCP subject-list TSV filename under HCP_img/subj_list.')
+    parser.add_argument(
+        '--model-dir', default=str(Path(MODEL_DIR) / 'Models_03'),
+        help='Directory containing the Md K=17 dlabel atlas files.')
+    parser.add_argument(
+        '--out-dir', default=EVAL_DIR,
+        help='Directory where evaluation TSV files are written.')
+    parser.add_argument(
+        '--test-smooth', default='4_MSMAll',
+        help='Smoothing tag for HCP task contrast dscalars.')
+    parser.add_argument(
+        '--positive-only', action='store_true',
+        help='Evaluate only positive HCP task contrasts.')
+    parser.add_argument(
+        '--plot-files', nargs='*', default=None,
+        help='Specific evaluation TSV files to plot. Defaults to all matching files in --out-dir.')
+    parser.add_argument(
+        '--plot-task', default='all',
+        help="Task name to plot from the evaluation TSVs. Default: 'all'.")
+    parser.add_argument(
+        '--plot-out', default=None,
+        help='Output plot path. Defaults to a PDF in --out-dir.')
+    parser.add_argument(
+        '--task-plot-data-out', default=None,
+        help='Output TSV path for compact HCP task-contrast plot data.')
+    parser.add_argument(
+        '--rest-plot-data-out', default=None,
+        help='Output TSV path for compact HCP resting-state plot data.')
+    return parser.parse_args(argv)
+
+
+def run_md_smoothing_group_eval_from_args(args):
+    if args.subj_list_file is not None:
+        subj_list_files = [Path(args.subj_list_file).name]
+    elif str(args.split).lower() == 'all':
+        subj_list_files = [f'HCP200_test_{split}.tsv' for split in [1, 2, 3, 4]]
+    else:
+        subj_list_files = [f'HCP200_test_{int(args.split)}.tsv']
+
+    for subj_list_file in subj_list_files:
+        split_tag = Path(subj_list_file).stem.replace('HCP200_test_', 'split-')
+        if split_tag == 'HCP200_test':
+            split_tag = 'all-subjects'
+        out_file = (
+            Path(args.out_dir) /
+            f'eval_group-Md_smoothing-families_K-17_on-HCPtask-contrast-{args.test_smooth}_{split_tag}.tsv'
+        )
+        eval_md_smoothing_group_atlases_on_hcp_task(
+            subj_list_file=subj_list_file,
+            model_dir=args.model_dir,
+            out_file=out_file,
+            test_smooth=args.test_smooth,
+            positive_only=args.positive_only,
+            K=17)
+
+
+def run_md_smoothing_group_plot_from_args(args):
+    plot_md_smoothing_group_eval(
+        result_files=args.plot_files,
+        out_dir=args.out_dir,
+        test_smooth=args.test_smooth,
+        task_name=args.plot_task,
+        save_file=args.plot_out)
+
+
+def run_existing_hcp_rest_group_plot_from_args(args):
+    plot_existing_hcp_rest_group_eval(
+        result_files=args.plot_files,
+        out_dir=args.out_dir,
+        save_file=args.plot_out)
+
+
+def export_plot_input_files(out_dir=EVAL_DIR, test_smooth='4_MSMAll', task_name='all',
+                            task_out=None, rest_out=None):
+    """Export the compact raw rows used by the task and rest plots."""
+    out_dir = Path(out_dir)
+    task_data = make_task_contrast_plot_input(
+        out_dir=out_dir, test_smooth=test_smooth, task_name=task_name)
+    rest_data = make_existing_hcp_rest_plot_input(out_dir=out_dir)
+
+    if task_out is None:
+        task_out = (
+            out_dir /
+            f'plotdata_group-Md_smoothing-families_K-17_on-HCPtask-contrast-{test_smooth}_task-{task_name}.tsv'
+        )
+    else:
+        task_out = Path(task_out)
+    if rest_out is None:
+        rest_out = out_dir / 'plotdata_existing-Md-smoothing-families_on-HCPrest-Tseries.tsv'
+    else:
+        rest_out = Path(rest_out)
+
+    task_out.parent.mkdir(parents=True, exist_ok=True)
+    rest_out.parent.mkdir(parents=True, exist_ok=True)
+    task_data.to_csv(task_out, sep='\t', index=False)
+    rest_data.to_csv(rest_out, sep='\t', index=False)
+
+    print(f'Saved task contrast plot data to {task_out} ({task_data.shape[0]} rows)')
+    print(f'Saved resting-state plot data to {rest_out} ({rest_data.shape[0]} rows)')
+    return task_data, rest_data
+
+
+def run_export_plot_inputs_from_args(args):
+    export_plot_input_files(
+        out_dir=args.out_dir,
+        test_smooth=args.test_smooth,
+        task_name=args.plot_task,
+        task_out=args.task_plot_data_out,
+        rest_out=args.rest_plot_data_out)
+
+
 def make_rand_par_L(K, num_parcellation=100, mesh='sphere'):
     # Define the atlas to generate random parcellation
     atlas, _ = am.get_atlas('fs32k', ATLAS_DIR)
@@ -668,6 +1272,28 @@ def make_rand_par_L(K, num_parcellation=100, mesh='sphere'):
     return rand_par, names
 
 if __name__ == "__main__":
+    args = parse_group_eval_args()
+    if args.export_plot_inputs:
+        run_export_plot_inputs_from_args(args)
+        sys.exit(0)
+
+    if len(sys.argv) == 1:
+        run_md_smoothing_group_plot_from_args(args)
+        run_existing_hcp_rest_group_plot_from_args(args)
+        sys.exit(0)
+
+    if args.plot_existing_hcp_rest:
+        run_existing_hcp_rest_group_plot_from_args(args)
+        sys.exit(0)
+
+    if args.plot_md_smoothing_hcp_task:
+        run_md_smoothing_group_plot_from_args(args)
+        sys.exit(0)
+
+    if args.eval_md_smoothing_hcp_task:
+        run_md_smoothing_group_eval_from_args(args)
+        sys.exit(0)
+
     # if len(sys.argv) != 3:
     #     print("Usage: python group_eval.py <K> <i>")
     #     sys.exit(1)
@@ -783,7 +1409,7 @@ if __name__ == "__main__":
     #
     # results = eval_fs32k_group_parcellation(parcels, names, [data], task_nam=['all'],
     #                                         space='fs32k_L', train_smooth=smoothes, test_smooth=None, K=n_parcels)
-    # results.to_csv(f'/home/dzhi/eris_mount/dzhi/Indiv_par/Evaluations/eval_group-random_K-10-30_sm6-masked_on-MSC-task-contrasts.tsv',
+    # results.to_csv(EVAL_DIR + f'/eval_group-random_K-10-30_sm6-masked_on-MSC-task-contrasts.tsv',
     #                 index=False, sep='\t')
 
     ### Evaluation on the HCP resting-state data
@@ -795,15 +1421,15 @@ if __name__ == "__main__":
 
     results = pd.DataFrame()
     for i in [1,2,3,4]:
-        df = pd.read_csv(f'/home/dzhi/eris_mount/dzhi/Indiv_par/Evaluations/eval_group_rest_vs_task_vs_fusion_K-17_on-HCPtest-task-contrasts-sm4_{i}.tsv',
+        df = pd.read_csv(EVAL_DIR + f'/eval_group_rest_vs_task_vs_fusion_K-17_on-HCPtest-task-contrasts-sm4_{i}.tsv',
                          sep='\t')
         results = pd.concat([results, df], ignore_index=True)
 
     ## Plot results
-    results = pd.read_csv(f'/home/dzhi/eris_mount/dzhi/Indiv_par/Evaluations/eval_group-random_K-10-30_sm6-masked_on-MSC-task-contrasts.tsv', sep='\t')
+    results = pd.read_csv(EVAL_DIR + f'/eval_group-random_K-10-30_sm6-masked_on-MSC-task-contrasts.tsv', sep='\t')
     results = results[(results['task_name']=='all')]
 
-    res1 = pd.read_csv(f'/home/dzhi/eris_mount/dzhi/Indiv_par/Evaluations/eval_group-fusion_K-10-30_sm8-10-masked_on-MSC-task-contrasts.tsv', sep='\t')
+    res1 = pd.read_csv(EVAL_DIR + f'/eval_group-fusion_K-10-30_sm8-10-masked_on-MSC-task-contrasts.tsv', sep='\t')
 
     df_random = results[results['group_map_name'].str.startswith('random', na=False)]
     df_existing = results[~results['group_map_name'].str.startswith('random', na=False) &

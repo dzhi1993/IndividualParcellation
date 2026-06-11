@@ -1,0 +1,9 @@
+subject_id	task_name	num_contrasts	dcbc_indiv	inhomo_indiv
+example_subject	EMOTION	3		0.8153209
+example_subject	GAMBLING	3		0.8364806
+example_subject	LANGUAGE	3		0.89244175
+example_subject	MOTOR	13		0.85209644
+example_subject	RELATIONAL	3		0.7894519
+example_subject	SOCIAL	3		0.83589983
+example_subject	WM	19		0.82908994
+example_subject	all	47	0.16604378819465637	0.8369946

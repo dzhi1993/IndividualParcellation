@@ -10,7 +10,7 @@ import torch as pt
 from pathlib import Path
 
 # pytorch cuda global flag: True - cuda; False - cpu
-pt.cuda.is_available = lambda : False
+pt.cuda.is_available = lambda : True
 if pt.cuda.is_available():
     DEVICE = 'cuda'
 else:
@@ -51,5 +51,11 @@ if not Path(BASE_DIR).exists():
     BASE_DIR = str(Path(home, 'diedrichsen_data/data/FunctionalFusion'))
 if not Path(BASE_DIR).exists():
     raise (NameError('Could not find base_dir'))
+
+ERIS_DIR = '/home/dzhi/eris_mount'
+if not Path(ERIS_DIR).exists():
+    ERIS_DIR = '/data/tge'
+if not Path(ERIS_DIR).exists():
+    raise (NameError('Could not find hcp_dir'))
 
 ATLAS_DIR = BASE_DIR + '/Atlases'

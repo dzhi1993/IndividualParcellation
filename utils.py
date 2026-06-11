@@ -14,13 +14,26 @@ import scipy.io as spio
 from FusionModel.util import plot_data_flat
 from pathlib import Path
 from itertools import combinations
-from IndividualParcellation.global_config import MODEL_DIR, BASE_DIR, ATLAS_DIR
+
+try:
+    from IndividualParcellation.global_config import MODEL_DIR, BASE_DIR, ATLAS_DIR
+except (ImportError, ModuleNotFoundError, NameError):
+    try:
+        from global_config import MODEL_DIR, BASE_DIR, ATLAS_DIR
+    except (ImportError, ModuleNotFoundError, NameError):
+        MODEL_DIR = None
+        BASE_DIR = None
+        ATLAS_DIR = None
+
+REPO_ROOT = Path(__file__).resolve().parent
+REPLICATION_DIR = REPO_ROOT / 'replication'
+MSHBM_17NETWORK_DIR = REPLICATION_DIR / 'MSHBM_17networks'
 
 ERIS_DIR = '/home/dzhi/eris_mount'
 if not Path(ERIS_DIR).exists():
     ERIS_DIR = '/data/tge'
 if not Path(ERIS_DIR).exists():
-    raise (NameError('Could not find hcp_dir'))
+    ERIS_DIR = None
 
 def stacker(data_list):
     """
@@ -58,19 +71,14 @@ def get_DU15_parcellation(file_name='DU15NET_Prior', atlas_space='fs32k'):
     return DU15, network_names, colors
 
 def get_kong2019_group_parcellation():
-    network_names = spio.loadmat(ERIS_DIR + '/dzhi/workspace/CBIG/stable_projects/'
-                                 'brain_parcellation/Kong2019_MSHBM/lib/'
-                                 'group_priors/HCP_40/17network_labels.mat')['network_name']
+    network_names = spio.loadmat(MSHBM_17NETWORK_DIR / '17network_labels.mat')['network_name']
     network_names = ['???'] + [network_names[0][i][0] for i in range(17)]
 
-    colors = spio.loadmat(ERIS_DIR + '/dzhi/workspace/CBIG/stable_projects/'
-                     'brain_parcellation/Kong2019_MSHBM/lib/'
-                     'group_priors/HCP_40/group.mat')['colors']/255
+    colors = spio.loadmat(MSHBM_17NETWORK_DIR / 'group.mat')['colors']/255
     colors = colors[1:,:]
     colors = np.hstack((colors, np.ones((17, 1))))
     colors = np.vstack((np.zeros(4), colors))
-    KONG2019 = nb.load(ERIS_DIR + '/dzhi/Indiv_par/Kong_2019/group_prior' \
-                       '/HCP_40/Kong-2019_MSHBM_HCP40_prob_prior.dscalar.nii').get_fdata()[:]
+    KONG2019 = nb.load(MSHBM_17NETWORK_DIR / 'Kong-2019_MSHBM_HCP40_prob_prior.dscalar.nii').get_fdata()[:]
 
     return KONG2019, network_names, colors
 

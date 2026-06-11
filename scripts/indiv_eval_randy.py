@@ -44,11 +44,11 @@ if not Path(RANDY_DIR).exists():
 if not Path(RANDY_DIR).exists():
     raise (NameError('Could not find RANDY_DIR'))
 
-RES_DIR = '/home/dzhi/eris_mount/dzhi/Indiv_par/Evaluations'
-if not Path(RES_DIR).exists():
-    RES_DIR = '/data/tge/dzhi/Indiv_par/Evaluations'
-if not Path(RES_DIR).exists():
-    raise (NameError('Could not find RANDY_DIR'))
+REPO_ROOT = Path(__file__).resolve().parents[1]
+RESULTS_DIR = REPO_ROOT / 'results'
+RES_DIR = RESULTS_DIR / 'indiv_eval_randy'
+RES_DIR.mkdir(parents=True, exist_ok=True)
+RES_DIR = str(RES_DIR)
 
 ERIS_DIR = '/home/dzhi/eris_mount'
 
