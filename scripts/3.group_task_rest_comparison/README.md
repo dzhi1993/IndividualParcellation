@@ -11,7 +11,7 @@ Group parcellations are trained with the root-level `../../train_group.py` workf
 
 ## Network Dice Tables
 
-`network_dice_similarity.ipynb` reads the following files from `../../results/3.task_rest`:
+`network_dice_similarity.ipynb` reads the following files from `../../results/3.task_rest_fusion`:
 
 - `Table_S3_network_correspondence_HBP17REST_vs_MSHBM17.csv`: Table S3, Figure panel 2c.
 - `Table_S6_network_correspondence_HBP17REST_vs_YEO17.csv`: Table S6, Supplementary Figure panel 3c.
@@ -26,7 +26,7 @@ Each table stores network-wise Dice values with permutation-test p-values in the
 - Atlas definitions and model resources configured through `global_config.py`.
 - Subject-list files under `../../replication/subject_list` where required.
 - Task data and evaluation assets available through the dependent fusion/parcellation projects.
-- Precomputed network correspondence tables under `../../results/3.task_rest`.
+- Precomputed network correspondence tables under `../../results/3.task_rest_fusion`.
 
 ## Outputs
 

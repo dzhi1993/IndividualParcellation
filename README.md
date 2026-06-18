@@ -12,7 +12,7 @@ Details are described in the paper:
 ## What this repository contains
 
 - End-to-end scripts for fitting and applying individual parcellation models.
-- Evaluation utilities for HCP, HPN, leave-one-out, and related comparisons.
+- Evaluation utilities for HCP, HPN, and related comparisons.
 - Reproduction code for manuscript figure/result blocks.
 
 ## Repository layout

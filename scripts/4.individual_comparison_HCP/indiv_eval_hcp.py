@@ -72,54 +72,6 @@ else:
 pt.set_default_device(DEVICE)
 pt.set_default_dtype(pt.float32)
 
-def trim_sparse_tensor(sparse_tensor, rows_to_remove, cols_to_remove):
-    """
-    Trims the given sparse tensor by removing specified rows and columns.
-
-    Parameters:
-    sparse_tensor (torch.sparse_coo_tensor or torch.sparse_csr_tensor): The input sparse tensor.
-    rows_to_remove (torch.Tensor): A 1D tensor containing the indices of rows to remove.
-    cols_to_remove (torch.Tensor): A 1D tensor containing the indices of columns to remove.
-
-    Returns:
-    torch.sparse.Tensor: The trimmed sparse tensor.
-    """
-    # Check the format of the sparse tensor and convert to COO if necessary
-    if sparse_tensor.layout == pt.sparse_coo:
-        indices = sparse_tensor._indices()
-        values = sparse_tensor._values()
-    elif sparse_tensor.layout == pt.sparse_csr:
-        sparse_tensor = sparse_tensor.to_sparse_coo()
-        indices = sparse_tensor._indices()
-        values = sparse_tensor._values()
-    else:
-        raise ValueError("The sparse tensor must be in COO or CSR format.")
-
-    # Extract row and column indices from the COO format
-    row_indices = indices[0]
-    col_indices = indices[1]
-
-    # Create masks to keep only the rows and columns that are NOT in the rows_to_remove and cols_to_remove
-    row_mask = ~pt.isin(row_indices, rows_to_remove)
-    col_mask = ~pt.isin(col_indices, cols_to_remove)
-
-    # Combine the masks to filter out the unwanted rows and columns
-    combined_mask = row_mask & col_mask
-
-    # Filter the indices and values using the combined mask
-    filtered_indices = indices[:, combined_mask]
-    filtered_values = values[combined_mask]
-
-    # Compute the new size of the tensor after removing rows and columns
-    new_size = (sparse_tensor.size(0) - len(rows_to_remove),
-                sparse_tensor.size(1) - len(cols_to_remove))
-
-    # Create the new sparse tensor
-    trimmed_sparse_tensor = pt.sparse_coo_tensor(filtered_indices,
-                                                 filtered_values,
-                                                 size=new_size)
-
-    return trimmed_sparse_tensor
 
 def make_eval_info(M, atlas='MNIAsymC2', train_info=['UKB'], train_sess='ses-2',
                    tdata='MDTB', test_sess='ses-1', model_type='Models_03',
@@ -148,92 +100,6 @@ def make_eval_info(M, atlas='MNIAsymC2', train_info=['UKB'], train_sess='ses-2',
     # minfo['indiv_train_par_kappa'] = M.emissions[0].parcel_specific_kappa
     minfo['indiv_test_kappa'] = test_kappa
     return minfo
-
-def eval_parcel_DCBC(U_group, U_indiv, t_data, dist, minfo, out_file=None):
-    # convert tdata to tensor
-    if type(t_data) is np.ndarray:
-        t_data = pt.tensor(t_data, dtype=pt.get_default_dtype())
-    # convert U_group and U_indiv to tensor
-    if type(U_group) is np.ndarray:
-        U_group = pt.tensor(U_group, dtype=pt.get_default_dtype())
-    if type(U_indiv) is np.ndarray:
-        U_indiv = pt.tensor(U_indiv, dtype=pt.get_default_dtype())
-
-    num_subj = t_data.shape[0]
-    # Now run the DCBC evaluation fo the group
-    # Pgroup = pt.argmax(U_group, dim=0) + 1
-    # Pindiv = pt.argmax(U_indiv, dim=1) + 1
-    homo_group = ev.calc_test_homogeneity(U_group, t_data)
-    homo_indiv = ev.calc_test_homogeneity(U_indiv, t_data)
-    dcbc_group = ev.calc_test_dcbc(U_group, t_data, dist)
-    dcbc_indiv = ev.calc_test_dcbc(U_indiv, t_data, dist)
-
-    # ------------------------------------------
-    # Collect the information from the evaluation
-    # in a data frame
-    train_datasets = minfo.datasets
-    ev_df = pd.DataFrame({'atlas': [minfo.atlas] * num_subj,
-                          'K': [minfo.K] * num_subj,
-                          'train_data': [train_datasets] * num_subj,
-                          'train_sess': [minfo.train_sess] * num_subj,
-                          'test_data': [minfo.test_data] * num_subj,
-                          'test_sess': [minfo.test_sess] * num_subj,
-                          'model_type': [minfo.model_type] * num_subj,
-                          'group_map_name': [minfo.group_map_name] * num_subj,
-                          'subj_num': np.arange(num_subj),
-                          'indiv_test_kappa': [minfo.indiv_test_kappa] * num_subj})
-    # Add all the evaluations to the data frame
-    ev_df['dcbc_group'] = dcbc_group.cpu()
-    ev_df['dcbc_indiv'] = dcbc_indiv.cpu()
-    ev_df['homo_group'] = homo_group.cpu()
-    ev_df['homo_indiv'] = homo_indiv.cpu()
-    # ev_df.to_csv(out_file, index=False, sep='\t')
-    return ev_df
-
-def plot_multi_flat(data, atlas, grid, cmap='tab20b', dtype='label',
-                    cscale=None, titles=None, colorbar=False,
-                    save_fig=False):
-    """ Plot multiple flatmaps in a grid
-
-    Args:
-        data: the input parcellations, shape(N, K, P) where N indicates
-              the number of parcellations, K indicates the number of
-              parcels, and P is the number of vertices.
-        atlas: the atlas name used to plot the flatmap
-        grid: the grid shape of the subplots
-        cmap: the colormap used to plot the flatmap
-        dtype: the data type of the input data, 'label' or 'prob'
-        cscale: the color scale used to plot the flatmap
-        titles: the titles of the subplots
-        colorbar: whether to plot the colorbar
-        save_fig: whether to save the figure, default format is png
-
-    Returns:
-        The plt figure plot
-    """
-
-    if isinstance(data, np.ndarray):
-        n_subplots = data.shape[0]
-    elif isinstance(data, list):
-        n_subplots = len(data)
-
-    if not isinstance(cmap, list):
-        cmap = [cmap] * n_subplots
-
-    for i in np.arange(n_subplots):
-        plt.subplot(grid[0], grid[1], i + 1)
-        futil.plot_data_flat(data[i], atlas,
-                       cmap=cmap[i],
-                       dtype=dtype,
-                       cscale=None,
-                       render='matplotlib',
-                       colorbar=(i == 0) & colorbar)
-
-        plt.title(titles[i])
-        plt.tight_layout()
-
-    if save_fig:
-        plt.savefig('/indiv_parcellations.png')
 
 
 def eval_task_inhomo_MSHBM_vs_HBP_indiv():
@@ -408,7 +274,7 @@ if __name__ == "__main__":
     hut.report_cuda_memory()
 
     for global_counter in [1,2,3,4]:
-        subj_list_file = f"test.tsv"
+        subj_list_file = f"HCP200_test_{global_counter}.tsv"
         ######## Step 1. Load subjects individual training data
         print(f'Start loading data {global_counter}: HCP resting - {training_ses}, {fc_type} {ext} ...')
         tic = time.perf_counter()
@@ -476,20 +342,20 @@ if __name__ == "__main__":
                     nb.save(img, MODEL_DIR + f'/Models_03/indiv_parcellation/HCP200_test_set' +
                             f'/asym_MdNiIbHc+HCPrest-1run{half}-indiv_space-fs32k_K-17_Ico642Run_groupstrengh-{p}_spatial-{w}_{global_counter}.dlabel.nii')
 
-    # Combine all test subjects parcellation
-    indiv_par = []
-    # colors[[1, 6]] = colors[[6, 1]]
-    for i in [1, 2, 3, 4]:
-        par = nb.load('/home/dzhi/eris_mount/dzhi/Indiv_par/Models/Models_03/indiv_parcellation/HCP203_test_set' +
-                    f'/asym_KONG2019+HCPrest-1run-indiv_space-fs32k_K-17_Ico642Run_groupstrengh-2_spatial-2_{i}.dlabel.nii').get_fdata()[:]
-        indiv_par.append(par)
-    indiv_par = np.vstack(indiv_par)
-    T = pd.read_csv(get_subject_list_path("HCP200_test.tsv"), sep='\t')
-    img = nt.make_label_cifti(indiv_par.T, atlas.get_brain_model_axis(),
-                              column_names=[f'{i}' for i in T.participant_id],
-                              label_names=net_name, label_RGBA=colors)
-    nb.save(img, MODEL_DIR + f'/Models_03/indiv_parcellation/HCP200_test_set' +
-            f'/asym_MdNiIbHc+HCPrest-2261s2-indiv_space-fs32k_K-17_Ico642Run_groupstrengh-1_spatial-1.dlabel.nii')
+    # # Combine all test subjects parcellation
+    # indiv_par = []
+    # # colors[[1, 6]] = colors[[6, 1]]
+    # for i in [1, 2, 3, 4]:
+    #     par = nb.load('/home/dzhi/eris_mount/dzhi/Indiv_par/Models/Models_03/indiv_parcellation/HCP203_test_set' +
+    #                 f'/asym_KONG2019+HCPrest-1run-indiv_space-fs32k_K-17_Ico642Run_groupstrengh-2_spatial-2_{i}.dlabel.nii').get_fdata()[:]
+    #     indiv_par.append(par)
+    # indiv_par = np.vstack(indiv_par)
+    # T = pd.read_csv(get_subject_list_path("HCP200_test.tsv"), sep='\t')
+    # img = nt.make_label_cifti(indiv_par.T, atlas.get_brain_model_axis(),
+    #                           column_names=[f'{i}' for i in T.participant_id],
+    #                           label_names=net_name, label_RGBA=colors)
+    # nb.save(img, MODEL_DIR + f'/Models_03/indiv_parcellation/HCP200_test_set' +
+    #         f'/asym_MdNiIbHc+HCPrest-2261s2-indiv_space-fs32k_K-17_Ico642Run_groupstrengh-1_spatial-1.dlabel.nii')
 
 
     ####################################################################################################################
@@ -640,59 +506,3 @@ if __name__ == "__main__":
 
 
 
-    # ar_model = ar.build_arrangement_model(U, prior_type='logpi', atlas=atlas,
-    #                                       sym_type='asym')
-    # U_indv, _, M = fm.get_indiv_parcellation(ar_model, atlas, data,
-    #                                          cond_vec, part_vec, subj_ind,
-    #                                          sym_type='asym',
-    #                                          em_params={'num_subj': data[0].shape[0],
-    #                                                     'uniform_kappa': True,
-    #                                                     'subjects_equal_weight':True,
-    #                                                     'subject_specific_kappa': False,
-    #                                                     'parcel_specific_kappa': False})
-
-    # em_params={'subjects_equal_weight':True,
-    #             'uniform_kappa': None,
-    #             'subject_specific_kappa': False,
-    #             'parcel_specific_kappa': True}
-
-    # del data
-    # pt.cuda.empty_cache()
-    # fm.report_cuda_memory()
-
-    # ######## Step 3: Evaluate individual maps using DCBC
-    # # Step 3.1: compute the distance matrix
-    # dist = ev.compute_dist(atlas.world.T, resolution=1)
-    # # Step 3.2: Gatering all necessary information for evaluation
-    # eval_info = make_eval_info(M, train_info=['UKB'], train_sess='ses-rest1',
-    #                         tdata='UKB', test_sess='ses-rest2', 
-    #                         model_type='Models_04', group_map_name='Buckner7',
-    #                         test_kappa=None)
-    # # Step 3.3: Do DCBC evaluation on the second half data
-    # res = eval_parcel_DCBC(U, U_indv, t_data[0], dist, eval_info,
-    #                         out_file='eval_dcbc_indiv_Buckner7_k-7_model-04_test.tsv')
-    # dice = [hev.dice_coefficient(pt.tensor(U_hard), pt.argmax(U_indv, dim=1)[i]) 
-    #         for i in range(U_indv.shape[0])]
-    # # res.to_csv(f'eval_dcbc_indiv_Buckner7_k-7_model-04_test2_prior.tsv', index=False, sep='\t')
-
-    # ######## Step 4: Visualization
-    # # Step 4.1 (optional): plot the DCBC results
-    # ev_df = pd.read_csv('eval_dcbc_indiv_parcellations.tsv', sep='\t')
-    # plt.figure(figsize=(5, 5))
-    # df = pd.melt(ev_df, var_name='group', value_name='value')
-    # df = df.loc[(df['group'] == 'dcbc_group') | (df['group'] == 'dcbc_indiv')]
-    # sb.barplot(x='group', y='value', errorbar="se", width=0.7, data=df)
-    # plt.show()
-
-    # # Step 4.2: plot group parcellation
-    # plt.figure(figsize=(10, 10))
-    # plot_multi_flat(U.unsqueeze(0).cpu().numpy(), 'MNIAsymC2', grid=(1, 1),
-    #                 cmap='tab20', dtype='prob', titles=['group prior'])
-    # plt.show()
-
-    # # Step 4.3: plot individual parcellation
-    # plt.figure(figsize=(40,20))
-    # plot_multi_flat(U_indv.cpu().numpy(), 'MNIAsymC2', grid=(2, 5),
-    #                 cmap='tab20', dtype='prob',
-    #                 titles=["subj_{}".format(i+1) for i in range(U_indv.shape[0])])
-    # plt.show()

@@ -11,7 +11,10 @@ import Functional_Fusion.dataset as ds
 import Functional_Fusion.atlas_map as am
 import scipy.io as spio
 
-from FusionModel.util import plot_data_flat
+try:
+    from FusionModel.util import plot_data_flat
+except (ImportError, ModuleNotFoundError, NameError):
+    plot_data_flat = None
 from pathlib import Path
 from itertools import combinations
 
@@ -28,12 +31,93 @@ except (ImportError, ModuleNotFoundError, NameError):
 REPO_ROOT = Path(__file__).resolve().parent
 REPLICATION_DIR = REPO_ROOT / 'replication'
 MSHBM_17NETWORK_DIR = REPLICATION_DIR / 'MSHBM_17networks'
+HBP17_FUSION_PRIOR_FILE = (REPLICATION_DIR / 'group_parcellations' /
+                           '17Networks' /
+                           'HBP17_FUSION_networks_prob.dscalar.nii')
+KONG2019_PRIOR_FILE = (MSHBM_17NETWORK_DIR /
+                       'Kong-2019_MSHBM_HCP40_prob_prior.dscalar.nii')
+FS32K_CONNECTIVITY_FILES = [
+    Path('/home/dzhi/eris_mount/Tian/UKBB_full/imaging/Atlases/tpl-fs32k/fs32k_neighbours.pt'),
+    Path('/data/tge/Tian/UKBB_full/imaging/Atlases/tpl-fs32k/fs32k_neighbours.pt'),
+]
+CIFTI_CORTEX_STRUCTURES = (
+    'CIFTI_STRUCTURE_CORTEX_LEFT',
+    'CIFTI_STRUCTURE_CORTEX_RIGHT',
+)
+CIFTI_CEREBELLUM_STRUCTURES = (
+    'CIFTI_STRUCTURE_CEREBELLUM_LEFT',
+    'CIFTI_STRUCTURE_CEREBELLUM_RIGHT',
+)
+BUCKNER7_PRIOR_FILES = [
+    REPLICATION_DIR / 'cerebellum_parcellations' /
+    'atl-Buckner7_space-MNI152NLin2009cSymC_dseg.nii',
+    REPLICATION_DIR / 'Buckner7' /
+    'atl-Buckner7_space-MNI152NLin2009cSymC_dseg.nii',
+    Path('/data/tge/Tian/UKBB_full/imaging/Atlases/tpl-MNI152NLin2009cSymC/'
+         'atl-Buckner7_space-MNI152NLin2009cSymC_dseg.nii'),
+    Path('/home/dzhi/eris_mount/Tian/UKBB_full/imaging/Atlases/'
+         'tpl-MNI152NLin2009cSymC/'
+         'atl-Buckner7_space-MNI152NLin2009cSymC_dseg.nii'),
+]
+BUCKNER7_CONFIDENCE_FILES = [
+    REPLICATION_DIR / 'cerebellum_parcellations' /
+    'Buckner2011_7NetworksConfidence_MNI152_FreeSurferConformed1mm_LooseMask.nii.gz',
+    REPLICATION_DIR / 'Buckner7' /
+    'Buckner2011_7NetworksConfidence_MNI152_FreeSurferConformed1mm_LooseMask.nii.gz',
+    Path('/data/tge/dzhi/Indiv_par/Buckner_JNeurophysiol11_MNI152/'
+         'Buckner2011_7NetworksConfidence_MNI152_FreeSurferConformed1mm_LooseMask.nii.gz'),
+    Path('/home/dzhi/eris_mount/dzhi/Indiv_par/Buckner_JNeurophysiol11_MNI152/'
+         'Buckner2011_7NetworksConfidence_MNI152_FreeSurferConformed1mm_LooseMask.nii.gz'),
+]
+BUCKNER7_NETWORK_NAMES = [
+    '???',
+    'Visual',
+    'Somatomotor',
+    'Dorsal attention',
+    'Ventral attention',
+    'Limbic',
+    'Frontoparietal',
+    'Default',
+]
+BUCKNER7_COLORS = np.array([
+    [0, 0, 0, 0],
+    [120, 18, 134, 255],
+    [70, 130, 180, 255],
+    [0, 118, 14, 255],
+    [196, 58, 250, 255],
+    [220, 248, 164, 255],
+    [230, 148, 34, 255],
+    [205, 62, 78, 255],
+], dtype=np.float32) / 255
 
 ERIS_DIR = '/home/dzhi/eris_mount'
 if not Path(ERIS_DIR).exists():
     ERIS_DIR = '/data/tge'
 if not Path(ERIS_DIR).exists():
     ERIS_DIR = None
+
+def get_existing_file(candidates, description, required=True):
+    for file_name in candidates:
+        if Path(file_name).exists():
+            return Path(file_name)
+
+    if required:
+        candidates = '\n'.join([f'  - {file_name}' for file_name in candidates])
+        raise FileNotFoundError(f'Could not find {description}. Checked:\n'
+                                f'{candidates}')
+    return None
+
+def get_atlas_training_type(atlas_space):
+    if atlas_space.startswith('fs32k'):
+        return 'cortex'
+    if atlas_space == 'MNIAsymC2':
+        return 'cerebellum'
+    raise ValueError(f'Unknown atlas training type for atlas_space='
+                     f'{atlas_space}. Use fs32k for cortex or MNIAsymC2 '
+                     f'for cerebellum.')
+
+def get_buckner7_group_parcellation():
+    return BUCKNER7_NETWORK_NAMES, BUCKNER7_COLORS.copy()
 
 def stacker(data_list):
     """
@@ -162,6 +246,10 @@ def plot_multi_flat(data, atlas, grid, cmap='tab20b', dtype='label',
     Returns:
         The plt figure plot
     """
+    if plot_data_flat is None:
+        raise ImportError('plot_multi_flat requires FusionModel.util.'
+                          'plot_data_flat, but FusionModel is not available '
+                          'in the current environment.')
 
     if isinstance(data, np.ndarray):
         n_subplots = data.shape[0]
@@ -213,6 +301,9 @@ def convert_hard_to_prob(U, strength=7.0, confidence=None):
     if U.ndim == 1:
         logpi = ar.expand_mn_1d(U, K) * strength
         if confidence is not None:
+            if not pt.is_tensor(confidence):
+                confidence = pt.tensor(confidence,
+                                       dtype=pt.get_default_dtype())
             logpi = logpi * confidence
         # Set parcel 0 to unassigned
         logpi = logpi[1:, :] if np.any(np.unique(U) == 0) else logpi

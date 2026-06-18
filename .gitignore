@@ -198,5 +198,12 @@ Thumbs.db
 # Project-generated outputs
 #results/
 
+# Large replication support files not distributed through GitHub
+replication/indiv_parcellations/
+
+# Local ABCD single-subject visit outputs
+sub-*_HBP17_FUSION*_indiv*.npy
+sub-*_HBP17_FUSION*_indiv*.dlabel.nii
+
 # Large local support files for root train/evaluation examples
 example_data/distGOD_fs32k.pt

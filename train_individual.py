@@ -139,7 +139,6 @@ if __name__ == "__main__":
         sym_type='asym',
         n_iter=N_ITER,
         em_params={'num_subj': n_subj,
-                   'uniform_kappa': True,
                    'subjects_equal_weight': True,
                    'subject_specific_kappa': False,
                    'parcel_specific_kappa': False})
