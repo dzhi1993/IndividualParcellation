@@ -7,7 +7,7 @@ the analyses in the manuscript.
 
 Details are described in the paper:
 
-- Zhi, D., Diedrichsen, J., Ge, T. (2026). "Precision Functional Parcellation of the Human Cortex via Rest-Task fMRI Fusion."
+- Zhi, D., Du, J., Whitfield-Gabrieli, S., Diedrichsen, J., & Ge, T. (2026). *Precision functional parcellation of the human cortex via rest-task fMRI fusion*. bioRxiv. https://www.biorxiv.org/content/10.64898/2026.06.11.731643v1
 
 ## What this repository contains
 
