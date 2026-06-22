@@ -1,55 +1,64 @@
 # IndividualParcellation
 
-This repository contains code for generating and evaluating individual cortical parcellations using a multinomial restricted
-Boltzmann Machine (mRBM) built on top of [HierarchBayesParcel](https://github.com/DiedrichsenLab/HierarchBayesParcel). It combines group atlas information with subject-level 
-localizer data to produce reliable individual cortical parclelations. The repository also host all code scripts for replication
+This repository is the code base of the manuscript *"Precision functional parcellation of the human cortex via rest-task fMRI fusion"*. 
+It contains code for generating and evaluating individual cortical parcellations using a multinomial restricted
+Boltzmann Machine (mRBM) built on top of [HierarchBayesParcel](https://github.com/DiedrichsenLab/HierarchBayesParcel). The repository also host all scripts for replication
 the analyses in the manuscript.
 
 Details are described in the paper:
 
 - Zhi, D., Du, J., Whitfield-Gabrieli, S., Diedrichsen, J., & Ge, T. (2026). *Precision functional parcellation of the human cortex via rest-task fMRI fusion*. bioRxiv. https://www.biorxiv.org/content/10.64898/2026.06.11.731643v1
 
-## What this repository contains
+## Project layout
 
-- End-to-end scripts for fitting and applying individual parcellation models.
-- Evaluation utilities for HCP, HPN, and related comparisons.
-- Reproduction code for manuscript figure/result blocks.
+- [example_data](./example_data): small example CIFTI data and metadata for running the root-level training and evaluation examples.
+- [replication](./replication): static support files for reproducing the paper analyses, such as group priors, network names/colors, and subject lists.
+- [results](./results): precomputed result tables, figure inputs, and lightweight example outputs used by the release notebooks and scripts.
+- [scripts](./scripts): paper-flow analysis code organized by result section; each numbered folder contains the scripts used to replicate the paper analysis, or notebooks for that result block.
+- [deprecated](./deprecated): older analysis scripts retained for provenance but not maintained as active release entry points.
 
-## Repository layout
+Within each numbered [scripts](./scripts) subfolder, the intended second-level structure is:
 
-- [scripts](./scripts): paper-flow analysis scripts and manuscript reproduction workflows. Each numbered subfolder corresponds to a major analysis block and contains local documentation when more detail is needed.
-- [example_data](./example_data): minimal example input data used by the root training and evaluation examples.
-- [replication](./replication): static supporting files required to reproduce the analyses, including group parcellations, subject lists, and MSHBM/Kong2019 metadata.
-- [results](./results): generated outputs, precomputed summary tables, and figure-related artifacts used by the reproduction workflows.
-- [docs](./docs): project documentation assets such as pipeline diagrams and method notes.
-- [deprecated](./deprecated): older scripts retained for provenance but no longer maintained as active release entry points.
+- One lab-environment script that documents how the original result was generated.
+- One notebook that loads released/precomputed results and recreates the paper figures.
+- One `README.md` file that documents the inputs, outputs, and figure panels for that result section.
 
-## Root example files
+## Example scripts
 
-The root examples are intended to run from the project folder without editing lab-local paths:
+The root scripts provide a minimal two-step example workflow for one subject using the released example data and the fusion group prior. These scripts can be run from the project folder without adapting lab-local paths:
 
 ```bash
 python train_individual.py
 python evaluation.py
 ```
 
-[train_individual.py](./train_individual.py) requires:
+### 1. Train Individual Parcellation
 
-- `example_data/example_rest_space-fs32k_Ico642Run_desc-sm4fwhm_binarized.dscalar.nii`
-- `example_data/example_rest_Ico642Run.tsv`
-- `replication/group_parcellations/17Networks/HBP17_FUSION_networks_prob.dscalar.nii`
-- `replication/MSHBM_17networks/17network_labels.mat`
-- `replication/MSHBM_17networks/group.mat`
-- `replication/MSHBM_17networks/Kong-2019_MSHBM_HCP40_prob_prior.dscalar.nii`
+[train_individual.py](./train_individual.py) trains an example individual parcellation from resting-state connectivity features.
 
-[evaluation.py](./evaluation.py) evaluates the individual map produced by `train_individual.py` and requires:
+Required files:
 
-- `results/train_individual/example_subject_HBP17_FUSION_indiv_prob.npy`
-- `example_data/example_task_contrasts_s4_MSMAll.dscalar.nii`
-- `example_data/example_task_contrasts.tsv`
-- `example_data/distGOD_fs32k.pt`
+- `example_data/example_rest_space-fs32k_Ico642Run_desc-sm4fwhm_binarized.dscalar.nii`: example subject resting-state connectivity features in fs32k CIFTI space.
+- `example_data/example_rest_Ico642Run.tsv`: metadata for the resting-state features, including condition/network labels and run partitions.
+- `replication/group_parcellations/17Networks/HBP17_FUSION_networks_prob.dscalar.nii`: probabilistic HBP17 fusion group prior used to initialize individual parcellation training.
+- `replication/MSHBM_17networks/17network_labels.mat`: Kong2019/MSHBM network names used for output labeling.
+- `replication/MSHBM_17networks/group.mat`: Kong2019/MSHBM network colors used for output CIFTI labels and visualization.
+- `replication/MSHBM_17networks/Kong-2019_MSHBM_HCP40_prob_prior.dscalar.nii`: Kong2019 probabilistic prior used to align the trained parcellation to the released naming/color convention.
 
-`distGOD_fs32k.pt` is the precomputed fs32k surface-distance tensor used for DCBC evaluation, matching the manuscript scripts. It is a large local support file and is intentionally ignored by Git.
+The script writes the example individual parcellation outputs to `results/train_individual`.
+
+### 2. Evaluate Individual Parcellation
+
+After generating individual parcellations from step 1, [evaluation.py](./evaluation.py) evaluates the individual map using held-out task contrasts. The example reports DCBC and task inhomogeneity, following the same evaluation logic as the manuscript scripts.
+
+Required files:
+
+- `results/train_individual/example_subject_HBP17_FUSION_indiv_prob.npy`: probabilistic individual parcellation generated by `train_individual.py`.
+- `example_data/example_task_contrasts_s4_MSMAll.dscalar.nii`: example subject task-contrast data used as held-out evaluation data.
+- `example_data/example_task_contrasts.tsv`: metadata for the task contrasts, including contrast names and task domains.
+- `example_data/distGOD_fs32k.pt`: precomputed fs32k surface-distance tensor used for DCBC evaluation.
+
+`distGOD_fs32k.pt` matches the distance tensor used in the manuscript scripts. It is a large local support file and is intentionally ignored by Git.
 
 The manuscript-replication scripts also expect support files under [replication](./replication):
 
@@ -87,8 +96,8 @@ On Windows, add the same parent directory to the system `Path` or Python environ
 
 ## Notes on portability
 
-- Many scripts assume local lab storage layouts or dataset mounts configured in [global_config.py](./global_config.py).
-- Some manuscript reproduction scripts still contain machine-specific assumptions and should be treated as research code rather than stable public CLI tools.
+- THe scripts assume local lab storage layouts or dataset mounts configured in [global_config.py](./global_config.py).
+- THe repository is mainly aimed to host the reproduction scripts and it should not be treated as stable public CLI tools.
 - The numbered `scripts/*` paper-flow folders are best understood as result-reproduction modules tied to the paper figures.
 
 
