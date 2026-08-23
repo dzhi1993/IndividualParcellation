@@ -24,7 +24,7 @@ import time
 import FusionModel.util as ut
 
 from global_config import (DEVICE, FS32K_SURFACE_DIR_PATH, GROUP_DIR,
-                           HCP_PARTICIPANTS_FILE,
+                           HCP_PARTICIPANTS_FILE, HCP_DIR,
                            HCP_TRAINING_SUBJECT_LIST_FILE)
 from utils import get_DU15_parcellation, get_kong2019_group_parcellation
 
@@ -872,7 +872,7 @@ def run_task_fit(num_parcel=[15], smoothing_levels=[6],
 def rerun_rest_group_fit(num_parcel=[15], smoothing_levels=[6],
                          subj_list=None):
     A = pd.read_csv(HCP_PARTICIPANTS_FILE, delimiter='\t')
-    B = pd.read_csv(f'/home/dzhi/eris_mount/Tian/HCP_img/subj_list/rest_group_retrain/{subj_list}.tsv',
+    B = pd.read_csv(HCP_DIR + f'/subj_list/rest_group_retrain/{subj_list}.tsv',
                     delimiter='\t')
     hcp_subj_ind = np.array(A[A['participant_id'].isin(B['participant_id'])].index)
 
