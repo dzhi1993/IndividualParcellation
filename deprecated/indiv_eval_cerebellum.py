@@ -22,11 +22,12 @@ import HierarchBayesParcel.full_model as fm
 import HierarchBayesParcel.evaluation as hev
 import FusionModel.util as futil
 import FusionModel.evaluate as ev
+import utils as ut
 
 # from group_parcellation import build_ukb_datasets, convert_hard_to_prob, get_indiv_parcellation_from_model
-# from global_config import MODEL_DIR, BASE_DIR, ATLAS_DIR, DEVICE
+from global_config import MODEL_DIR, BASE_DIR, ATLAS_DIR, DEVICE
 
-def make_eval_info(M, atlas='MNIAsymC2', train_info=['UKB'], train_sess='ses-2',
+def make_eval_info(K, atlas='MNIAsymC2', train_info=['UKB'], train_sess='ses-2',
                    tdata='MDTB', test_sess='ses-1', model_type='Models_03', 
                    group_map_name='Buckner7', test_kappa=None):
     """ Collects all the information from the model and the
@@ -42,7 +43,7 @@ def make_eval_info(M, atlas='MNIAsymC2', train_info=['UKB'], train_sess='ses-2',
     """
     minfo = pd.Series()
     minfo['atlas'] = atlas
-    minfo['K'] = M.K
+    minfo['K'] = K
     minfo['datasets'] = train_info
     minfo['train_sess'] = train_sess
     minfo['test_data'] = tdata
@@ -68,8 +69,8 @@ def eval_parcel_DCBC(U_group, U_indiv, t_data, dist, minfo, out_file=None):
     # Now run the DCBC evaluation fo the group
     Pgroup = pt.argmax(U_group, dim=0) + 1
     Pindiv = pt.argmax(U_indiv, dim=1) + 1
-    homo_group = ev.calc_test_homogeneity(U_group, t_data)
-    homo_indiv = ev.calc_test_homogeneity(U_indiv, t_data)
+    homo_group = ev.calc_test_homogeneity(Pgroup, t_data)
+    homo_indiv = ev.calc_test_homogeneity(Pindiv, t_data)
     dcbc_group = ev.calc_test_dcbc(Pgroup, t_data, dist)
     dcbc_indiv = ev.calc_test_dcbc(Pindiv, t_data, dist)
 
@@ -143,26 +144,26 @@ def plot_multi_flat(data, atlas, grid, cmap='tab20b', dtype='label',
 if __name__ == "__main__":
     atlas, _ = am.get_atlas('MNIAsymC2')
     ######## Step 1. Load UKB 736 subjects training data
-    print(f'Start loading data: UKBresting - ses-rest1 - ICA25All ...')
-    tic = time.perf_counter()
-    data, cond_vec, part_vec, subj_ind = build_ukb_datasets(BASE_DIR,
-                                                            "test.tsv",
-                                                            space=atlas.name,
-                                                            ses_list=['ses-rest1'],
-                                                            type=['ICA25All'])
-    toc = time.perf_counter()
-    print(f'Done loading. Used {toc - tic:0.4f} seconds!')
-
-    ## Load UKB 736 subjects test data
-    print(f'Start loading data: UKBresting - ses-rest2 - Tseries ...')
-    tic = time.perf_counter()
-    t_data, _, _, _ = build_ukb_datasets(BASE_DIR,
-                                         "test.tsv",
-                                         space=atlas.name,
-                                         ses_list=['ses-rest2'],
-                                         type=['Tseries'])
-    toc = time.perf_counter()
-    print(f'Done loading. Used {toc - tic:0.4f} seconds!')
+    # print(f'Start loading data: UKBresting - ses-rest1 - ICA25All ...')
+    # tic = time.perf_counter()
+    # data, cond_vec, part_vec, subj_ind = build_ukb_datasets(BASE_DIR,
+    #                                                         "test.tsv",
+    #                                                         space=atlas.name,
+    #                                                         ses_list=['ses-rest1'],
+    #                                                         type=['ICA25All'])
+    # toc = time.perf_counter()
+    # print(f'Done loading. Used {toc - tic:0.4f} seconds!')
+    #
+    # ## Load UKB 736 subjects test data
+    # print(f'Start loading data: UKBresting - ses-rest2 - Tseries ...')
+    # tic = time.perf_counter()
+    # t_data, _, _, _ = build_ukb_datasets(BASE_DIR,
+    #                                      "test.tsv",
+    #                                      space=atlas.name,
+    #                                      ses_list=['ses-rest2'],
+    #                                      type=['Tseries'])
+    # toc = time.perf_counter()
+    # print(f'Done loading. Used {toc - tic:0.4f} seconds!')
 
     ######## Step 2. Generate group / indiv parcellations
     # Option 1: calculate indiv parcellations directly from fitted model
@@ -170,13 +171,14 @@ if __name__ == "__main__":
     #                   f'/Models_07/asym_Uk_space-MNIAsymC2_K-7_ses-rest1', data)
 
     # Option 2: calculate indiv parcellations from existing group map
-    atlas_dir = ATLAS_DIR + '/tpl-MNI152NLin2009cSymC'
-    model_name = f'/atl-Buckner7_space-MNI152NLin2009cSymC_dseg.nii'
-    U_hard = atlas.read_data(atlas_dir + model_name)
-    conf_dir = '/data/tge/dzhi/Indiv_par/Buckner_JNeurophysiol11_MNI152'
-    conf_name = f'/Buckner2011_7NetworksConfidence_MNI152_FreeSurferConformed1mm_LooseMask.nii.gz'
-    conf_map = atlas.read_data(conf_dir + conf_name)
-    U = convert_hard_to_prob(U_hard, strength=1, confidence=conf_map)
+    atlas_dir = ATLAS_DIR + '/tpl-MNI152NLin6AsymC'
+    model_name = f'/atl-Buckner17_space-MNI152NLin6AsymC_dseg.nii'
+    # model_name = f'/atl-NettekovenAsym32_space-MNI152NLin6AsymC_probseg.nii'
+    U = atlas.read_data(atlas_dir + model_name)
+    # conf_dir = '~/eris_mount/dzhi/Indiv_par/Buckner_JNeurophysiol11_MNI152'
+    # conf_name = f'/Buckner2011_7NetworksConfidence_MNI152_FreeSurferConformed1mm_LooseMask.nii.gz'
+    # conf_map = atlas.read_data(conf_dir + conf_name)
+    # U = ut.convert_hard_to_prob(U_hard, strength=1, confidence=conf_map)
 
     ar_model = ar.build_arrangement_model(U, prior_type='prob', atlas=atlas,
                                           sym_type='asym')
@@ -188,7 +190,8 @@ if __name__ == "__main__":
                                                         'subjects_equal_weight':True,
                                                         'subject_specific_kappa': True,
                                                         'parcel_specific_kappa': True})
-
+    U_indv = pt.randn((10,32,atlas.P)).softmax(dim=1)
+    t_data = [pt.randn((10,100,atlas.P))]
     # em_params={'subjects_equal_weight':True,
     #             'uniform_kappa': None,
     #             'subject_specific_kappa': False,
@@ -202,7 +205,7 @@ if __name__ == "__main__":
     # Step 3.1: compute the distance matrix
     dist = ev.compute_dist(atlas.world.T, resolution=1)
     # Step 3.2: Gatering all necessary information for evaluation
-    eval_info = make_eval_info(M, train_info=['UKB'], train_sess='ses-rest1',
+    eval_info = make_eval_info(U.shape[0], train_info=['UKB'], train_sess='ses-rest1',
                             tdata='UKB', test_sess='ses-rest2', 
                             model_type='Models_04', group_map_name='Buckner7',
                             test_kappa=None)
@@ -214,6 +217,7 @@ if __name__ == "__main__":
     # res.to_csv(f'eval_dcbc_indiv_Buckner7_k-7_model-04_test2_prior.tsv', index=False, sep='\t')
 
     ######## Step 4: Visualization
+    colors = ut.get_colormap_from_lut(fname=BASE_DIR + '/Atlases/tpl-SUIT/atl-Buckner7.lut')
     # Step 4.1 (optional): plot the DCBC results
     ev_df = pd.read_csv('eval_dcbc_indiv_parcellations.tsv', sep='\t')
     plt.figure(figsize=(5, 5))

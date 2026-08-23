@@ -27,27 +27,18 @@ import FusionModel.evaluate as ev
 import scipy.io as spio
 from pathlib import Path
 from copy import deepcopy
-import IndividualParcellation.scripts.group_eval as ge
-import IndividualParcellation.scripts.group_parcellation as gp
+import scripts.group_eval as ge
+import scripts.group_parcellation as gp
 
-import IndividualParcellation.utils as ut
-from global_config import MODEL_DIR, BASE_DIR, ATLAS_DIR
-from scripts.group_parcellation import ERIS_DIR
+import utils as ut
+from global_config import (ATLAS_DIR, BASE_DIR, DEVICE, ERIS_DIR, HCP_DIR,
+                           MODEL_DIR, REPLICATION_DIR, RESULTS_DIR,
+                           SUBJECT_LIST_DIR)
 
 # from scripts.dual_regression import model_name
 
 hemis_dict = {'L': 'cortex_left', 'R': 'cortex_right'}
 
-HCP_DIR = '/home/dzhi/eris_mount/Tian/HCP_img'
-if not Path(HCP_DIR).exists():
-    HCP_DIR = '/data/tge/Tian/HCP_img'
-if not Path(HCP_DIR).exists():
-    raise (NameError('Could not find hcp_dir'))
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-RESULTS_DIR = REPO_ROOT / 'results'
-REPLICATION_DIR = REPO_ROOT / 'replication'
-SUBJECT_LIST_DIR = REPLICATION_DIR / 'subject_list'
 RES_DIR = RESULTS_DIR / Path(__file__).resolve().parent.name
 RES_DIR.mkdir(parents=True, exist_ok=True)
 RES_DIR = str(RES_DIR)
@@ -57,22 +48,6 @@ def get_subject_list_path(file_name):
     if not subj_list_path.exists():
         subj_list_path = Path(HCP_DIR) / 'subj_list' / file_name
     return subj_list_path
-
-ERIS_DIR = '/home/dzhi/eris_mount'
-if not Path(ERIS_DIR).exists():
-    ERIS_DIR = '/data/tge'
-if not Path(ERIS_DIR).exists():
-    raise (NameError('Could not find hcp_dir'))
-
-# pytorch cuda global flag: True - cuda; False - cpu
-pt.cuda.is_available = lambda : True
-if pt.cuda.is_available():
-    DEVICE = 'cuda'
-else:
-    DEVICE = 'cpu'
-pt.set_default_device(DEVICE)
-pt.set_default_dtype(pt.float32)
-
 
 def make_eval_info(M, atlas='MNIAsymC2', train_info=['UKB'], train_sess='ses-2',
                    tdata='MDTB', test_sess='ses-1', model_type='Models_03',

@@ -24,48 +24,23 @@ import HierarchBayesParcel.util as hut
 import FusionModel.util as futil
 import FusionModel.evaluate as ev
 
-import group_parcellation as gp
-import group_eval as ge
+import scripts.group_parcellation as gp
+import scripts.group_eval as ge
 import scipy.io as spio
 from pathlib import Path
 from copy import deepcopy
 
-import IndividualParcellation.utils as ut
-from global_config import MODEL_DIR, BASE_DIR, ATLAS_DIR
-from scripts.group_parcellation import ERIS_DIR
+import utils as ut
+from global_config import (ATLAS_DIR, BASE_DIR, DEVICE, ERIS_DIR, MODEL_DIR,
+                           RANDY_DIR, RESULTS_DIR)
 
 # from scripts.dual_regression import model_name
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 hemis_dict = {'L': 'cortex_left', 'R': 'cortex_right'}
 
-RANDY_DIR = '/home/dzhi/eris_mount/Tian/RANDY15'
-if not Path(RANDY_DIR).exists():
-    RANDY_DIR = '/data/tge/Tian/RANDY15'
-if not Path(RANDY_DIR).exists():
-    raise (NameError('Could not find RANDY_DIR'))
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-RESULTS_DIR = REPO_ROOT / 'results'
 RES_DIR = RESULTS_DIR / 'indiv_eval_randy'
 RES_DIR.mkdir(parents=True, exist_ok=True)
 RES_DIR = str(RES_DIR)
-
-ERIS_DIR = '/home/dzhi/eris_mount'
-
-if not Path(ERIS_DIR).exists():
-    ERIS_DIR = '/data/tge'
-if not Path(ERIS_DIR).exists():
-    raise (NameError('Could not find RANDY_DIR'))
-
-# pytorch cuda global flag: True - cuda; False - cpu
-pt.cuda.is_available = lambda : True
-if pt.cuda.is_available():
-    DEVICE = 'cuda'
-else:
-    DEVICE = 'cpu'
-pt.set_default_device(DEVICE)
-pt.set_default_dtype(pt.float32)
-
 
 def make_eval_info(M, atlas='MNIAsymC2', train_info=['UKB'], train_sess='ses-2',
                    tdata='MDTB', test_sess='ses-1', model_type='Models_03',
@@ -179,7 +154,7 @@ def plot_multi_flat(data, atlas, grid, cmap='tab20b', dtype='label',
         plt.tight_layout()
 
     if save_fig:
-        plt.savefig('/indiv_parcellations.png')
+        plt.savefig(Path(RES_DIR) / 'indiv_parcellations.png')
 
 
 def eval_task_inhomo_MSHBM_vs_HBP_indiv():
@@ -412,9 +387,12 @@ if __name__ == "__main__":
 
     ## Find optimal task battery
     maps = nb.load(
-        '/home/dzhi/eris_mount/Tian/RANDY15/derivatives/group/data/group_space-fs32k_ses-task_CondAll_masked-hi0.1lo0.1_binarized.dscalar.nii').get_fdata()
+        Path(RANDY_DIR) / 'derivatives/group/data/'
+        'group_space-fs32k_ses-task_CondAll_'
+        'masked-hi0.1lo0.1_binarized.dscalar.nii'
+    ).get_fdata()
     # maps = nb.load(
-    #     '/home/dzhi/eris_mount/Tian/RANDY15/derivatives/group/data/group_space-fs32k_ses-task_CondAll.dscalar.nii').get_fdata()
+    #     Path(RANDY_DIR) / 'derivatives/group/data/group_space-fs32k_ses-task_CondAll.dscalar.nii').get_fdata()
 
     # for num_tasks in range(9, 10):
     #     # best_score = -np.inf

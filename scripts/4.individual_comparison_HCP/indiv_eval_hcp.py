@@ -24,29 +24,18 @@ import HierarchBayesParcel.util as hut
 import FusionModel.util as futil
 import FusionModel.evaluate as ev
 
-import group_parcellation as gp
-import group_eval as ge
 import scipy.io as spio
 from pathlib import Path
 
-import IndividualParcellation.utils as ut
-from global_config import MODEL_DIR, BASE_DIR, ATLAS_DIR
-from scripts.group_parcellation import ERIS_DIR
+import utils as ut
+from global_config import (ATLAS_DIR, BASE_DIR, DEVICE, ERIS_DIR, HCP_DIR,
+                           MODEL_DIR, REPLICATION_DIR, RESULTS_DIR,
+                           SUBJECT_LIST_DIR)
 
 # from scripts.dual_regression import model_name
 
 hemis_dict = {'L': 'cortex_left', 'R': 'cortex_right'}
 
-HCP_DIR = '/home/dzhi/eris_mount/Tian/HCP_img'
-if not Path(HCP_DIR).exists():
-    HCP_DIR = '/data/tge/Tian/HCP_img'
-if not Path(HCP_DIR).exists():
-    raise (NameError('Could not find hcp_dir'))
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-RESULTS_DIR = REPO_ROOT / 'results'
-REPLICATION_DIR = REPO_ROOT / 'replication'
-SUBJECT_LIST_DIR = REPLICATION_DIR / 'subject_list'
 RES_DIR = RESULTS_DIR / Path(__file__).resolve().parent.name
 RES_DIR.mkdir(parents=True, exist_ok=True)
 RES_DIR = str(RES_DIR)
@@ -57,23 +46,7 @@ def get_subject_list_path(file_name):
         subj_list_path = Path(HCP_DIR) / 'subj_list' / file_name
     return subj_list_path
 
-ERIS_DIR = '/home/dzhi/eris_mount'
-if not Path(ERIS_DIR).exists():
-    ERIS_DIR = '/data/tge'
-if not Path(ERIS_DIR).exists():
-    raise (NameError('Could not find hcp_dir'))
-
-# pytorch cuda global flag: True - cuda; False - cpu
-pt.cuda.is_available = lambda : False
-if pt.cuda.is_available():
-    DEVICE = 'cuda'
-else:
-    DEVICE = 'cpu'
-pt.set_default_device(DEVICE)
-pt.set_default_dtype(pt.float32)
-
-
-def make_eval_info(M, atlas='MNIAsymC2', train_info=['UKB'], train_sess='ses-2',
+def make_eval_info(K, atlas='MNIAsymC2', train_info=['UKB'], train_sess='ses-2',
                    tdata='MDTB', test_sess='ses-1', model_type='Models_03',
                    group_map_name='Buckner7', test_kappa=None):
     """ Collects all the information from the model and the
@@ -89,7 +62,7 @@ def make_eval_info(M, atlas='MNIAsymC2', train_info=['UKB'], train_sess='ses-2',
     """
     minfo = pd.Series()
     minfo['atlas'] = atlas
-    minfo['K'] = M.K
+    minfo['K'] = K
     minfo['datasets'] = train_info
     minfo['train_sess'] = train_sess
     minfo['test_data'] = tdata
@@ -279,13 +252,13 @@ if __name__ == "__main__":
         print(f'Start loading data {global_counter}: HCP resting - {training_ses}, {fc_type} {ext} ...')
         tic = time.perf_counter()
         ## HCP task data
-        # data1, cond_vec1, part_vec1, subj_ind1, t_info = gp.build_hcp_datasets(HCP_DIR, f'subj_list/{subj_list_file}',
+        # data1, cond_vec1, part_vec1, subj_ind1, t_info = ut.build_hcp_datasets(HCP_DIR, f'subj_list/{subj_list_file}',
         #                                                            atlas, ses_list=['ses-task'],
         #                                      join_sess=False, join_sess_part=False,
         #                                      part_ind=['half'], part_num=None, cond_ind=['reg_id'],
         #                                      type=['CondHalf'], hemis=None, smooth='6fwhm_zstat_masked-hi0.1lo0.1')
         ## HCP resting data
-        data_all, cond_vec_all, part_vec_all, subj_ind_all, rs_info = gp.build_hcp_datasets(HCP_DIR, f"subj_list/{subj_list_file}",
+        data_all, cond_vec_all, part_vec_all, subj_ind_all, rs_info = ut.build_hcp_datasets(HCP_DIR, f"subj_list/{subj_list_file}",
                                                     atlas, ses_list=['all'],
                                                     join_sess=False, join_sess_part=False,
                                                     part_ind='run', part_num=[1,2], cond_ind=['net_id'],
@@ -346,7 +319,7 @@ if __name__ == "__main__":
     # indiv_par = []
     # # colors[[1, 6]] = colors[[6, 1]]
     # for i in [1, 2, 3, 4]:
-    #     par = nb.load('/home/dzhi/eris_mount/dzhi/Indiv_par/Models/Models_03/indiv_parcellation/HCP203_test_set' +
+    #     par = nb.load(MODEL_DIR + '/Models_03/indiv_parcellation/HCP203_test_set' +
     #                 f'/asym_KONG2019+HCPrest-1run-indiv_space-fs32k_K-17_Ico642Run_groupstrengh-2_spatial-2_{i}.dlabel.nii').get_fdata()[:]
     #     indiv_par.append(par)
     # indiv_par = np.vstack(indiv_par)
@@ -413,7 +386,7 @@ if __name__ == "__main__":
                     Pindiv = Pindiv[idx]
 
                     # Making evaluation information
-                    minfo = ge.make_eval_info(K, train_info=['HCP'], train_sess=f'run-{half}',
+                    minfo = make_eval_info(K, train_info=['HCP'], train_sess=f'run-{half}',
                                                 tdata='HCP', test_sess='contrasts',
                                                 model_type='Models_03', group_map_name='MdNiIbHc',
                                                 test_kappa=None)
@@ -503,6 +476,3 @@ if __name__ == "__main__":
     #                     cmap=colors, dtype='prob',
     #                     titles=["subj_{}".format(i+1) for i in range(10)])
     #     plt.show()
-
-
-

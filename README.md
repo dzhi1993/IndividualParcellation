@@ -68,7 +68,17 @@ The manuscript-replication scripts also expect support files under [replication]
 
 ## Dependencies
 
-This project depends on standard scientific Python packages listed in [requirements.txt](./requirements.txt), including `numpy`, `pandas`, `matplotlib`, `nibabel`, `nilearn`, and `torch`.
+The released environment is tested on Linux x86-64 with CPython 3.10.12,
+PyTorch 2.5.1, and CUDA 12.4. [requirements.txt](./requirements.txt) pins both
+the direct dependencies and their complete transitive dependency set to the
+tested versions. Install all published Python packages with one command:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+The CUDA wheel can also execute on CPU when CUDA is unavailable, although its
+download is substantially larger than a CPU-only PyTorch installation.
 
 It also depends on the following packages:
 
@@ -78,27 +88,69 @@ It also depends on the following packages:
 - [SUITPy](https://suitpy.readthedocs.io/en/latest/index.html)
 - [nitools](https://nitools.readthedocs.io/en/latest/)
 
-Install the general Python dependencies with:
+`SUITPy` and `nitools` (distributed on PyPI as `neuroimagingtools`) are
+installed by `requirements.txt`. The first three research repositories do not
+currently provide Python packaging metadata, so pip cannot install them from
+their GitHub URLs. Clone them beside this repository and add the repository
+roots to `PYTHONPATH`.
+
+On the tested Linux workstation/HPC layout:
 
 ```bash
-pip install -r requirements.txt
+cd <path_to>/IndividualParcellation
+source setup_env.sh
 ```
 
-For the lab packages above, clone the repositories and add their parent directory to `PYTHONPATH`.
+The limbic-border generation utility additionally uses Connectome Workbench
+1.5.0 (`wb_command`). It is an external application and is therefore not part
+of `requirements.txt`.
 
-On macOS/Linux:
+## Local and HPC configuration
+
+All shared paths and device selection are defined in
+[global_config.py](./global_config.py). No source edits are needed when moving
+between the workstation and the lab HPC:
+
+- Local storage is detected at `~/eris_mount`.
+- HPC storage is detected at `/data/tge`.
+- CUDA is used when it is actually available; otherwise the code uses CPU.
+
+After copying or pulling the same checkout on either system, activate the
+Python environment, set `PYTHONPATH` as above, and verify the selected paths:
 
 ```bash
-export PYTHONPATH=<path_to_repo_parent>:$PYTHONPATH
+python global_config.py
 ```
 
-On Windows, add the same parent directory to the system `Path` or Python environment configuration.
+Paths can be overridden without changing synchronized code:
+
+| Variable | Purpose |
+|---|---|
+| `INDIVPAR_DATA_ROOT` | Root containing `Tian` and `dzhi` data folders |
+| `INDIVPAR_MODEL_DIR` | Trained-model directory |
+| `FUNCTIONAL_FUSION_DIR` | Functional Fusion data/atlas directory |
+| `INDIVPAR_DEVICE` | `auto` (default), `cpu`, or `cuda` |
+| `INDIVPAR_FIGURE_DIR` | Figure output directory |
+| `WORKBENCH_COMMAND` | Connectome Workbench executable name or path |
+
+For example, a nonstandard HPC mount can be selected with:
+
+```bash
+export INDIVPAR_DATA_ROOT=/cluster/shared/tge
+export INDIVPAR_DEVICE=cuda
+python global_config.py
+```
+
+Large datasets and pretrained models are not duplicated inside this Git
+repository. They must be visible through the detected shared-data root. The
+ignored `example_data/distGOD_fs32k.pt` file must also be copied separately if
+the root evaluation example will be rerun.
 
 ## Notes on portability
 
-- THe scripts assume local lab storage layouts or dataset mounts configured in [global_config.py](./global_config.py).
-- THe repository is mainly aimed to host the reproduction scripts and it should not be treated as stable public CLI tools.
-- The numbered `scripts/*` paper-flow folders are best understood as result-reproduction modules tied to the paper figures.
+- The repository is mainly aimed at hosting reproduction scripts and is not a stable public CLI package.
+- The numbered `scripts/*` folders are result-reproduction modules tied to the paper figures.
+- Run scripts from the repository root so the shared configuration and sibling lab packages resolve consistently.
 
 
 

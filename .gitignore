@@ -198,6 +198,10 @@ Thumbs.db
 # Project-generated outputs
 #results/
 
+# Reviewer-response additional experiments
+scripts/additional_experiments/
+results/additional_experiments/
+
 # Large replication support files not distributed through GitHub
 replication/indiv_parcellations/
 

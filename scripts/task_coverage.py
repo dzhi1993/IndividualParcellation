@@ -11,7 +11,10 @@ import torch as pt
 import nibabel as nb
 import pandas as pd
 from itertools import combinations
-device = pt.device("cuda" if pt.cuda.is_available() else "cpu")
+
+from global_config import DATA_ROOT_PATH, DEVICE
+
+device = pt.device(DEVICE)
 
 def pairwise_overlap(maps, selected):
     """
@@ -95,14 +98,14 @@ def task_beta_selection(maps, M, lamda=0.5, selected=None):
 
 if __name__ == '__main__':
     ## Load task data (N task condition, P)
-    ds_name = 'Nishimoto'
-    data_dir = f'/home/dzhi/eris_mount/Tian/{ds_name}/derivatives/group/data'
+    ds_name = 'MDTB'
+    data_dir = DATA_ROOT_PATH / 'Tian' / ds_name / 'derivatives/group/data'
 
     # 1. masked task condition (betas) map from group-level analysis
     # The reason of using group task beta maps is we here wanted to
     # find the optimal battery based on population-level activation pattern,
     # we will not do this optimal search on each individual's task map.
-    maps = nb.load(data_dir + '/group_space-fs32k_ses-01_CondAll_masked-hi0.1lo0.1_binarized.dscalar.nii').get_fdata()
+    maps = nb.load(data_dir / 'group_space-fs32k_ses-01_CondAll_masked-hi0.1lo0.1_binarized.dscalar.nii').get_fdata()
     # 2. Unmasked task condition map
     # maps = nb.load(data_dir + '/group_space-fs32k_ses-task_CondAll.dscalar.nii').get_fdata()
 

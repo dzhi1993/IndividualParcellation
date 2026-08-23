@@ -27,49 +27,25 @@ import FusionModel.evaluate as ev
 import scipy.io as spio
 from pathlib import Path
 from copy import deepcopy
-import IndividualParcellation.scripts.group_eval as ge
+import scripts.group_eval as ge
 
-import IndividualParcellation.utils as ut
-from global_config import MODEL_DIR, BASE_DIR, ATLAS_DIR
-from scripts.group_parcellation import ERIS_DIR
+import utils as ut
+from global_config import (ATLAS_DIR, BASE_DIR, DEVICE, ERIS_DIR, HCP_DIR,
+                           MODEL_DIR, REPLICATION_DIR, RESULTS_DIR,
+                           SUBJECT_LIST_DIR)
 
 # from scripts.dual_regression import model_name
 
 hemis_dict = {'L': 'cortex_left', 'R': 'cortex_right'}
 
-HCP_DIR = '/home/dzhi/eris_mount/Tian/HCP_img'
-if not Path(HCP_DIR).exists():
-    HCP_DIR = '/data/tge/Tian/HCP_img'
-if not Path(HCP_DIR).exists():
-    raise (NameError('Could not find hcp_dir'))
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-RESULTS_DIR = REPO_ROOT / 'results'
-REPLICATION_DIR = REPO_ROOT / 'replication'
-SUBJECT_LIST_DIR = REPLICATION_DIR / 'subject_list'
 RES_DIR = RESULTS_DIR / Path(__file__).resolve().parent.name
 RES_DIR.mkdir(parents=True, exist_ok=True)
 RES_DIR = str(RES_DIR)
 
-ERIS_DIR = '/home/dzhi/eris_mount'
-if not Path(ERIS_DIR).exists():
-    ERIS_DIR = '/data/tge'
-if not Path(ERIS_DIR).exists():
-    raise (NameError('Could not find hcp_dir'))
-
-# pytorch cuda global flag: True - cuda; False - cpu
-pt.cuda.is_available = lambda : True
-if pt.cuda.is_available():
-    DEVICE = 'cuda'
-else:
-    DEVICE = 'cpu'
-pt.set_default_device(DEVICE)
-pt.set_default_dtype(pt.float32)
-
 def make_network_plot(space='MNISymC3',
                       model_name='Models_03/asym_Md_space-MNISymC3_K-17'):
     atlas, _ = am.get_atlas(space)
-    _, M = ut.load_batch_best(model_name, device='cuda')
+    _, M = ut.load_batch_best(model_name, device=DEVICE)
     U_group_hard = pt.argmax(M.arrange.marginal_prob(), dim=0).cpu().numpy() + 1
     colors = ut.get_cmap(model_name)
     colors[12] = np.array([249 / 255, 178 / 255, 247 / 255, 1.])
@@ -130,7 +106,7 @@ if __name__ == "__main__":
     #                                                   join_sess_part=False)
     #
     # ##### Option1: Use full model E_step
-    # _, M = ut.load_batch_best('Models_03/asym_Md_space-MNISymC3_K-17', device='cuda')
+    # _, M = ut.load_batch_best('Models_03/asym_Md_space-MNISymC3_K-17', device=DEVICE)
     # U_group_hard = pt.argmax(M.arrange.marginal_prob(), dim=0).cpu().numpy() + 1
     # M.initialize(tdata)
     # # emloglik = M.collect_evidence([e.Estep() for e in M.emissions])
@@ -141,7 +117,7 @@ if __name__ == "__main__":
     ##### Option2: pipeline
     ## Step 1: Loading a pre-trained group model
     # model_name = f'/Models/Models_03/asym_Md_space-MNISymC3_K-17'
-    # U, minfo = ar.load_group_parcellation(model_dir + model_name, device='cuda')
+    # U, minfo = ar.load_group_parcellation(model_dir + model_name, device=DEVICE)
     # ar_model = ar.build_arrangement_model(U, prior_type='logpi', atlas=atlas,
     #                                       sym_type='asym')
     # Get indiv parcellation from first half

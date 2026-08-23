@@ -26,15 +26,13 @@ import HierarchBayesParcel.evaluation as hev
 import HierarchBayesParcel.util as hut
 import FusionModel.util as futil
 import FusionModel.evaluate as ev
-import IndividualParcellation.scripts.group_parcellation as gp
+import scripts.group_parcellation as gp
 import utils as ut
 
-from IndividualParcellation.scripts.group_parcellation import build_ukb_datasets, build_hcp_datasets, load_hcp_timeseries, load_hcp_task_contrast
-from global_config import MODEL_DIR, BASE_DIR, ATLAS_DIR
-HCP_DIR = '/home/dzhi/eris_mount/Tian/HCP_img'
-REPO_ROOT = Path(__file__).resolve().parents[1]
-RESULTS_DIR = REPO_ROOT / 'results'
-REPLICATION_DIR = REPO_ROOT / 'replication'
+from scripts.group_parcellation import build_ukb_datasets, build_hcp_datasets, load_hcp_timeseries, load_hcp_task_contrast
+from global_config import (ATLAS_DIR, BASE_DIR, DATA_ROOT_PATH, DEVICE,
+                           ERIS_DIR, HCP_DIR, MODEL_DIR, MSC_DIR,
+                           REPLICATION_DIR, RESULTS_DIR)
 RESULT_DIR = str(REPLICATION_DIR / 'group_parcellations')
 EVAL_DIR = RESULTS_DIR / 'group_eval'
 EVAL_DIR.mkdir(parents=True, exist_ok=True)
@@ -45,20 +43,10 @@ EVAL_DIR = str(EVAL_DIR)
 BRAIN_WISE = ['whole brain'] * 50
 TRAIN_SMOOTH = [0,4,6,8,10]
 
-# pytorch cuda global flag: True - cuda; False - cpu
-pt.cuda.is_available = lambda : True
-if pt.cuda.is_available():
-    DEVICE = 'cuda'
-else:
-    DEVICE = 'cpu'
-pt.set_default_device(DEVICE)
-pt.set_default_dtype(pt.float32)
-
-
 def load_existing_atlas():
     atlas, _ = am.get_atlas('fs32k')
     atlas.calculate_symmetry()
-    data_dir = '/home/dzhi/eris_mount'
+    data_dir = ERIS_DIR
     ######## Evaluate MS-HBM group vs. HBP group parcellations
     YEO2011 = nb.load(data_dir + f'/dzhi/workspace/res/group/Yeo2011_17.dlabel.nii').get_fdata().reshape(-1)[0:29759]
     KONG2019 = np.argmax(ut.get_kong2019_group_parcellation()[0], axis=0)[0:29759] + 1
@@ -68,7 +56,7 @@ def load_existing_atlas():
 
     # Existing parcellations (from Kong collection)
     # GORDON_333 = nb.load(existing_atlas_dir + '/Gordon.32k.L.label.gii').darrays[0].data
-    # YEO17 = spio.loadmat('/data/tge/dzhi/workspace/cbig_network_correspondence_data/atlases/fs_LR_32k/YeoLab/TY17.mat')['lh_labels'].reshape(-1)
+    # YEO17 = spio.loadmat(DATA_ROOT_PATH / 'dzhi/workspace/cbig_network_correspondence_data/atlases/fs_LR_32k/YeoLab/TY17.mat')['lh_labels'].reshape(-1)
     GORDON_286 = spio.loadmat(data_dir +
                               '/dzhi/workspace/cbig_network_correspondence_data/atlases/fs_LR_32k/WashU/EG286_12.mat')['lh_labels'].reshape(-1)
     GORDON_17 = spio.loadmat(data_dir +
@@ -245,7 +233,7 @@ def load_msc_contrasts(ds_name, space='fs32k', sess='all', subj=None, smooth=Non
         sess = [sess]
     assert isinstance(sess, list)
 
-    dataset = ds.DataSetMSC('/home/dzhi/eris_mount/Tian/MSC')
+    dataset = ds.DataSetMSC(MSC_DIR)
     T = dataset.get_participants()
     # Assemble the data
     Data = None
@@ -348,7 +336,7 @@ def plot_multi_flat(data, atlas, grid, cmap='tab20b', dtype='label',
         plt.tight_layout()
 
     if save_fig:
-        plt.savefig('/indiv_parcellations.png')
+        plt.savefig(Path(EVAL_DIR) / 'indiv_parcellations.png')
 
 
 def eval_UKB_group_indiv(smooth=[2,3,4,5,6], test_smooth=None, K=7, 
@@ -1299,7 +1287,7 @@ if __name__ == "__main__":
     #     sys.exit(1)
 
     atlas, _ = am.get_atlas('fs32k')
-    RES_DIR = '/home/dzhi/eris_mount/dzhi/Indiv_par/Models/Models_03'
+    RES_DIR = MODEL_DIR + '/Models_03'
     results = pd.DataFrame()
     parcels, names, n_parcels = load_existing_atlas()
     smoothes = [0] * len(parcels)
@@ -1340,7 +1328,9 @@ if __name__ == "__main__":
     # HBP_15_MdNiIbHc = atlas.cifti_to_data(RES_DIR + '/task_fusion/asym_MdNiIbHc_space-fs32k_K-15_sm6fwhm_binarized_Ib-jointsess_all.dlabel.nii')[0]
 
     ############ 17 networks ############
-    YEO2011 = nb.load('/home/dzhi/eris_mount/dzhi/workspace/res/group/Yeo2011_17.dlabel.nii').get_fdata().reshape(-1)
+    YEO2011 = nb.load(
+        DATA_ROOT_PATH / 'dzhi/workspace/res/group/Yeo2011_17.dlabel.nii'
+    ).get_fdata().reshape(-1)
     KONG2019 = np.argmax(ut.get_kong2019_group_parcellation()[0], axis=0) + 1
     Hc_1 = atlas.cifti_to_data(RES_DIR + '/task_fusion/asym_Hc_space-fs32k_K-17_HCP40-Kong_ROI1483Run_sm6fwhm_binarized_all.dlabel.nii')[32].reshape(-1)
     # Hc_2 = atlas.cifti_to_data(
@@ -1473,7 +1463,7 @@ if __name__ == "__main__":
     # atlas_dir = ATLAS_DIR + '/tpl-MNI152NLin2009cSymC'
     # model_name = f'/atl-Buckner7_space-MNI152NLin2009cSymC_dseg.nii'
     # U_hard = atlas.read_data(atlas_dir + model_name)
-    # conf_dir = '/data/tge/dzhi/Indiv_par/Buckner_JNeurophysiol11_MNI152'
+    # conf_dir = DATA_ROOT_PATH / 'dzhi/Indiv_par/Buckner_JNeurophysiol11_MNI152'
     # conf_name = f'/Buckner2011_7NetworksConfidence_MNI152_FreeSurferConformed1mm_LooseMask.nii.gz'
     # conf_map = atlas.read_data(conf_dir + conf_name)
     # U = convert_hard_to_prob(U_hard, strength=1, confidence=conf_map)

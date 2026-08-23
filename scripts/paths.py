@@ -1,89 +1,34 @@
-from pathlib import Path
+"""Compatibility accessors for paths centralized in global_config.py."""
+from global_config import (ATLAS_DIR, BASE_DIR, FIGURE_DIR, MODEL_DIR,
+                           RESULTS_DIR)
+
+
+base_dir = BASE_DIR
+
 
 def set_base_dir():
-    """
-    Set the base directory for the project.
-    The function checks for the existence of the base directory in multiple locations and sets it accordingly.
-    If the base directory cannot be found, a NameError is raised.
-    """
+    return BASE_DIR
 
-    possible_dirs = [
-        '/Volumes/diedrichsen_data$/data/',
-        '/srv/diedrichsen/data/',
-        'Y:\data\\',
-        '/Users/callithrix/Documents/Projects//',
-        '/Users/jdiedrichsen/Data//',
-    ]
-
-    for directory in possible_dirs:
-        if Path(directory).exists():
-            return directory
-
-    raise FileNotFoundError('Could not find base_dir')
-
-base_dir = set_base_dir()
 
 def set_fusion_dir(base_dir=base_dir):
-    """
-    Set the directory for the atlases.
-    The directory is set based on the provided base directory.
-    """
-    fusion_dir = base_dir + f'/FunctionalFusion'
-    return fusion_dir
+    return BASE_DIR
+
 
 def set_atlas_dir(base_dir=base_dir):
-    """
-    Set the directory for the atlases.
-    The directory is set based on the provided base directory.
-    """
-    atlas_dir = base_dir + f'/FunctionalFusion/Atlases'
-    return atlas_dir
+    return ATLAS_DIR
+
 
 def set_model_dir(base_dir=base_dir):
-    """
-    Set the directory for the pre-trained models.
-    The directory is set based on the provided base directory.
-    """
-    model_dir = base_dir + f'/Cerebellum/ProbabilisticParcellationModel/Models'
-    return model_dir
+    return MODEL_DIR
 
 
 def set_export_dir(base_dir=base_dir):
-    """
-    Set the directory for exporting.
-    The directory is set based on the provided base directory.
-    """
-    export_dir = f'{base_dir}/Cerebellum/ProbabilisticParcellationModel/Atlases/'
-    if not Path(export_dir).exists():
-        export_dir = f'{base_dir}/FunctionalFusion/Atlases/'
+    return ATLAS_DIR
 
-    return export_dir
 
 def set_figure_dir():
-    """
-    Set the directory for the figures.
-    The function checks for the existence of the figure directory in multiple locations and sets it accordingly.
-    """
-    figure_dir = "/Users/jdiedrichsen/Dropbox (Diedrichsenlab)/papers/RestPaper/figure_parts/"
-    if not Path(figure_dir).exists():
-        figure_dir = "/Users/callithrix/Dropbox/RestPaper/figure_parts/"
-    if not Path(figure_dir).exists():
-        figure_dir = "/Users/callithrix/Documents/Projects/RestLocalization/figures/"
-    if not Path(figure_dir).exists():
-        figure_dir = base_dir + f'/Cerebellum/RestLocalization/figures/'
+    return str(FIGURE_DIR)
 
-    return figure_dir
 
-def set_results_dir(base_dir):
-    """
-    Set the directory for the atlases.
-    The directory is set based on the provided base directory.
-    """
-    results_dir = base_dir + f'/Cerebellum/RestLocalization/'
-    return results_dir
-
-if __name__ == '__main__':
-    base_dir = set_base_dir()
-    atlas_dir = set_atlas_dir(base_dir)
-    figure_dir = set_figure_dir()
-    export_dir = set_export_dir(base_dir)
+def set_results_dir(base_dir=base_dir):
+    return str(RESULTS_DIR)

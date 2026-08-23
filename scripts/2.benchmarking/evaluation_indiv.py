@@ -26,41 +26,18 @@ import Functional_Fusion.dataset as ds
 import FusionModel.evaluate as ev
 import HierarchBayesParcel.util as hut
 
-import IndividualParcellation.utils as ut
-from global_config import BASE_DIR
+import utils as ut
+from global_config import (BASE_DIR, DATA_ROOT_PATH, DEVICE, HCP_DIR,
+                           REPLICATION_DIR, RESULTS_DIR, SUBJECT_LIST_DIR)
 
 
 hemis_dict = {'L': 'cortex_left', 'R': 'cortex_right'}
 HCP_TASKS = ['EMOTION', 'GAMBLING', 'LANGUAGE', 'MOTOR',
              'RELATIONAL', 'SOCIAL', 'WM']
 
-HCP_DIR = '/home/dzhi/eris_mount/Tian/HCP_img'
-if not Path(HCP_DIR).exists():
-    HCP_DIR = '/data/tge/Tian/HCP_img'
-if not Path(HCP_DIR).exists():
-    raise (NameError('Could not find hcp_dir'))
-
-ERIS_DIR = Path('/home/dzhi/eris_mount')
-if not ERIS_DIR.exists():
-    ERIS_DIR = Path('/data/tge')
-if not ERIS_DIR.exists():
-    raise (NameError('Could not find eris_dir'))
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-RESULTS_DIR = REPO_ROOT / 'results'
-REPLICATION_DIR = REPO_ROOT / 'replication'
-SUBJECT_LIST_DIR = REPLICATION_DIR / 'subject_list'
+ERIS_DIR = DATA_ROOT_PATH
 RES_DIR = RESULTS_DIR / Path(__file__).resolve().parent.name
 RES_DIR.mkdir(parents=True, exist_ok=True)
-
-# pytorch cuda global flag: True - cuda; False - cpu
-pt.cuda.is_available = lambda : False
-if pt.cuda.is_available():
-    DEVICE = 'cuda'
-else:
-    DEVICE = 'cpu'
-pt.set_default_device(DEVICE)
-pt.set_default_dtype(pt.float32)
 
 
 # Basic evaluation settings. Edit these values directly for another run.
@@ -165,7 +142,7 @@ def load_hcp_task_contrasts(subjects, atlas, smooth=TASK_SMOOTH,
 
 def load_hcp_rest_timeseries(subjects, atlas, run_list=REST_RUN_LIST,
                              smooth=REST_SMOOTH, data_type=REST_TYPE):
-    data_dir = '/mnt/sda/HCP_rfMRI/fix_32k/{0}'
+    data_dir = HCP_DIR + '/rfMRI/fix_32k/{0}'
     data = []
     for run_id in run_list:
         ses_data = []

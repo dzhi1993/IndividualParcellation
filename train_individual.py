@@ -5,8 +5,6 @@ Minimal example for training an individual parcellation
 
 Author: dzhi
 """
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import torch as pt
@@ -19,20 +17,9 @@ import HierarchBayesParcel.full_model as fm
 import HierarchBayesParcel.util as hut
 import utils as ut
 
+from global_config import (DEVICE, EXAMPLE_DIR, REPLICATION_DIR, RESULTS_DIR)
 
-# pytorch cuda global flag: True - cuda; False - cpu
-pt.cuda.is_available = lambda : False
-if pt.cuda.is_available():
-    DEVICE = 'cuda'
-else:
-    DEVICE = 'cpu'
-pt.set_default_device(DEVICE)
-pt.set_default_dtype(pt.float32)
-
-REPO_ROOT = Path(__file__).resolve().parent
-EXAMPLE_DIR = REPO_ROOT / 'example_data'
-REPLICATION_DIR = REPO_ROOT / 'replication'
-RESULT_DIR = REPO_ROOT / 'results' / 'train_individual'
+RESULT_DIR = RESULTS_DIR / 'train_individual'
 
 # Example data and model files included in the repository.
 SPACE = 'fs32k'

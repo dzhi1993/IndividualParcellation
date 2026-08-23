@@ -23,22 +23,10 @@ from copy import deepcopy
 import time
 import FusionModel.util as ut
 
-try:
-    from utils import get_DU15_parcellation
-except ImportError:
-    from IndividualParcellation.utils import get_DU15_parcellation
-
-
-# pytorch cuda global flag
-pt.cuda.is_available = lambda : False
-if pt.cuda.is_available():
-    DEVICE = 'cuda'
-else:
-    DEVICE = 'cpu'
-pt.set_default_device(DEVICE)
-pt.set_default_dtype(pt.float32)
-
-GROUP_DIR = '/data/tge/Tian/HCP_img/derivatives/group'
+from global_config import (DEVICE, FS32K_SURFACE_DIR_PATH, GROUP_DIR,
+                           HCP_PARTICIPANTS_FILE,
+                           HCP_TRAINING_SUBJECT_LIST_FILE)
+from utils import get_DU15_parcellation, get_kong2019_group_parcellation
 
 
 def _as_list(value, n_sets):
@@ -47,11 +35,23 @@ def _as_list(value, n_sets):
     return [value] * n_sets
 
 
-def _get_task_group_prior(atlas_space='fs32k'):
+def _get_task_group_prior(atlas_space='fs32k', prior_name='KONG2019'):
     """Load the task-training initialization prior only when needed."""
-    DU15, _, _ = get_DU15_parcellation(file_name='DU15NET_PriorProb',
-                                       atlas_space=atlas_space)
-    return pt.tensor(DU15, dtype=pt.get_default_dtype())
+    if prior_name == 'DU2025':
+        prior, _, _ = get_DU15_parcellation(file_name='DU15NET_PriorProb',
+                                           atlas_space=atlas_space)
+    elif prior_name == 'KONG2019':
+        prior, _, _ = get_kong2019_group_parcellation()
+    elif prior_name == 'HBP17TASK':
+        from global_config import MODEL_DIR
+        model_name = 'asym_MdNiIb_space-fs32k_K-17_arrange-independent_sm6fwhm_zstat_masked-hi0.1lo0.1'
+        prior, _ = hut.load_group_parcellation(MODEL_DIR + f'/Models_03/task_fusion/{model_name}',
+                                               index=None, device=DEVICE)
+        prior = pt.softmax(prior, dim=1)
+    else:
+        raise ValueError('Unknown prior name: {}'.format(prior_name))
+
+    return pt.tensor(prior, dtype=pt.get_default_dtype())
 
 
 def build_data_list(datasets, atlas='MNISymC3', sess=None, cond_ind=None, type=None,
@@ -332,7 +332,9 @@ def batch_fit(datasets, sess,
     print(f'Building fullMultiModel {arrange} + {emission} for fitting...')
     # Load connectiviy matrix if cpRBM with connectiviy is used
     if arrange == 'cRBM_Wc':
-        surf = 'Y:/data/FunctionalFusion/Atlases/tpl-fs32k/tpl_fs32k_hemi-L_sphere.surf.gii'
+        surf = str(
+            FS32K_SURFACE_DIR_PATH / 'tpl_fs32k_hemi-L_sphere.surf.gii'
+        )
         Wc = ut.get_fs32k_neighbours(surf, remove_mw=True)
     else:
         Wc = None
@@ -342,11 +344,13 @@ def batch_fit(datasets, sess,
                     num_chain=n_subj, sess=sess, em_params={'num_subj': n_subj, **em_params})
 
     if training_type == 'task':
-        weights = pt.ones(len(data)) / len(data)
-        DU15 = _get_task_group_prior(atlas_space=atlas.name)
+        # weights = pt.ones(len(data)) / len(data)
+        weights = pt.tensor([td.shape[1] for td in data])
+        weights = (1 / weights) / pt.sum(1 / weights)
+        init_prior = _get_task_group_prior(atlas_space=atlas.name)
     else:
         weights = None
-        DU15 = None
+        init_prior = None
 
     del Wc
     pt.cuda.empty_cache()
@@ -383,8 +387,8 @@ def batch_fit(datasets, sess,
         m.initialize(data, subj_ind=subj_ind)
         if training_type == 'task':
             m.ds_weight = weights
-            m.arrange.logpi = pt.log(DU15 + 1e-2)
-            m.arrange.logpi = m.arrange.logpi - m.arrange.logpi.mean(dim=0)
+            # m.arrange.logpi = pt.log(init_prior + 1e-2)
+            # m.arrange.logpi = m.arrange.logpi - m.arrange.logpi.mean(dim=0)
         pt.cuda.empty_cache()
         hut.report_cuda_memory()
 
@@ -395,10 +399,10 @@ def batch_fit(datasets, sess,
                 tol=0.01,
                 fit_arrangement=True,
                 fit_emission=True,
-                init_arrangement=(training_type != 'task'),
+                init_arrangement=True,
                 init_emission=True,
                 n_inits=n_inits,
-                first_iter=first_iter, verbose=False)
+                first_iter=first_iter, verbose=True)
         elif m.arrange.name.startswith('cRBM'):
             m.random_params(init_arrangement=True,
                             init_emission=(training_type == 'task'))
@@ -466,11 +470,12 @@ def fit_all(set_ind=[0, 1, 2, 3], K=10, repeats=100, model_type='01',
             sess[idx] = this_sess[i]
 
     type = T.default_type.to_numpy()
-    type[7] = 'ROI1483Run'
+    type[7] = 'Ico642Run'
     if training_type == 'task' and len(type) > 13:
         type[13] = 'Ico642Run'
 
     cond_ind = T.default_cond_ind.to_numpy()
+    cond_ind[3] = 'cond_num'
     if training_type == 'task':
         if len(cond_ind) > 2:
             cond_ind[2] = 'cond_num'
@@ -540,10 +545,10 @@ def fit_all(set_ind=[0, 1, 2, 3], K=10, repeats=100, model_type='01',
                                  arrange=arrange,
                                  sym_type=mname,
                                  name=name,
-                                 n_inits=20 if training_type == 'task' else 30,
-                                 n_iter=500 if training_type == 'task' else 400,
+                                 n_inits=10,
+                                 n_iter=500,
                                  n_rep=repeats,
-                                 first_iter=10 if training_type == 'task' else 5,
+                                 first_iter=10,
                                  join_sess=join_sess,
                                  join_sess_part=join_sess_part,
                                  part_num=part_num,
@@ -838,38 +843,85 @@ def run_rest_hcp_fit(hcp_subj_ind, num_subj=40, set_index=None):
     return fname
 
 
-def run_task_fit(num_parcel=[15], smoothing_levels=[6]):
+def run_task_fit(num_parcel=[15], smoothing_levels=[6],
+                 hcp_subj_ind=None):
     for k in num_parcel:
         for train_smooth in smoothing_levels:
             print(f'Training K={k}, and smoothing = {train_smooth} ...')
-            wdir, fname, info, models = fit_all(set_ind=[0,2,3], K=k, repeats=10,
+            wdir, fname, info, models = fit_all(set_ind=[0,2,3,7], K=k, repeats=2,
                                                 model_type='03',
                                                 this_sess=None, sym_type=['asym'],
                                                 space='fs32k',
                                                 smooth=[f'{train_smooth}fwhm_zstat_masked-hi0.1lo0.1',
                                                         f'{train_smooth}fwhm_zstat_masked-hi0.1lo0.1',
-                                                        f'5_zstat_masked-hi0.1lo0.1'],
-                                                subj_list=[None,None,None],
+                                                        f'5_zstat_masked-hi0.1lo0.1',
+                                                        '4fwhm_binarized'],
+                                                subj_list=[None, None, None, hcp_subj_ind],
                                                 arrange='independent', Wc_theta=0.0,
-                                                part_num=[None, None, None],
-                                                training_type='task',
-                                                em_params={'uniform_kappa': True,
-                                                           'subjects_equal_weight': True,
+                                                part_num=[None, None, None, [1,2]],
+                                                training_type='task', sc=False,
+                                                em_params={'subjects_equal_weight': True,
                                                            'subject_specific_kappa': False,
                                                            'parcel_specific_kappa': False})
 
-            fname = fname + f'_sm{train_smooth}fwhm_zstat_masked-hi0.1lo0.1_Ib-jointsess_equalweights'
+            fname = fname + f'_sm{train_smooth}fwhm_zstat_masked-hi0.1lo0.1'
             info.to_csv(wdir + '/task_fusion' + fname + '.tsv', sep='\t')
             with open(wdir + '/task_fusion' + fname + '.pickle', 'wb') as file:
                 pickle.dump(models, file)
 
+def rerun_rest_group_fit(num_parcel=[15], smoothing_levels=[6],
+                         subj_list=None):
+    A = pd.read_csv(HCP_PARTICIPANTS_FILE, delimiter='\t')
+    B = pd.read_csv(f'/home/dzhi/eris_mount/Tian/HCP_img/subj_list/rest_group_retrain/{subj_list}.tsv',
+                    delimiter='\t')
+    hcp_subj_ind = np.array(A[A['participant_id'].isin(B['participant_id'])].index)
+
+    for k in num_parcel:
+        for train_smooth in smoothing_levels:
+            print(f'Training K={k}, and smoothing = {train_smooth} ...')
+            wdir, fname, info, models = fit_all(set_ind=[7], K=k, repeats=50,
+                                                model_type='03',
+                                                this_sess=None, sym_type=['asym'],
+                                                space='fs32k',
+                                                smooth=['4fwhm_binarized'],
+                                                subj_list=[hcp_subj_ind],
+                                                arrange='independent', Wc_theta=0.0,
+                                                part_num=[[1,2]],
+                                                training_type='task', sc=False,
+                                                em_params={'subjects_equal_weight': True,
+                                                           'subject_specific_kappa': False,
+                                                           'parcel_specific_kappa': False})
+
+            fname = fname + f'_sm{train_smooth}fwhm_zstat_masked-hi0.1lo0.1_nsub-{subj_list}'
+            info.to_csv(wdir + '/task_fusion' + fname + '.tsv', sep='\t')
+            with open(wdir + '/task_fusion' + fname + '.pickle', 'wb') as file:
+                pickle.dump(models, file)
 
 if __name__ == "__main__":
-    # Example task model:
-    run_task_fit(num_parcel=[15], smoothing_levels=[6])
-
     # Example resting-state HCP model:
-    # A = pd.read_csv('/home/dzhi/eris_mount/Tian/HCP_img/participants.tsv', delimiter='\t')
-    # B = pd.read_csv('/home/dzhi/eris_mount/Tian/HCP_img/subj_list/HCP40_training_KONG2019.tsv', delimiter='\t')
+    # A = pd.read_csv(HCP_PARTICIPANTS_FILE, delimiter='\t')
+    # B = pd.read_csv(HCP_TRAINING_SUBJECT_LIST_FILE, delimiter='\t')
     # hcp_subj_ind = np.array(A[A['participant_id'].isin(B['participant_id'])].index)
     # run_rest_hcp_fit(hcp_subj_ind, num_subj=40)
+
+    # Example task model:
+    # run_task_fit(num_parcel=[17], smoothing_levels=[6], hcp_subj_ind=hcp_subj_ind)
+
+    # Resting-state retraining
+    for nsub in [80,120,200,300,362]:
+        rerun_rest_group_fit(num_parcel=[17], smoothing_levels=[6],
+                             subj_list=f'/HCP{nsub}_rest_retrain')
+
+    # Write-in group map results into CIFTI
+    # KONG2019, network_names, colors = get_kong2019_group_parcellation()
+    # fname = f'Models_03/task_fusion/asym_MdNiIb_space-fs32k_K-17_sm6fwhm_zstat_masked-hi0.1lo0.1_Ib-jointsess_HBP17TASK-inits-0.01'
+    # ut.write_model_to_labelcifti([fname], align=KONG2019, col_names=[f'MdNiIb_{i + 1:02d}' for i in range(2)],
+    #                              label_names=network_names, label_RGBA=colors,
+    #                              load='all', oname=fname, device=DEVICE)
+
+    # DU15, network_names, colors = get_DU15_parcellation(file_name='DU15NET_Prior', atlas_space='fs32k')
+    # DU15 = ar.expand_mn_1d(DU15, K=16)
+    # fname = f'Models_03/task_fusion/asym_MdNiIb_space-fs32k_K-15_sm6fwhm_zstat_masked-hi0.1lo0.1_Ib-jointsess_DU15-inits_equalweights'
+    # ut.write_model_to_labelcifti([fname], align=DU15[1:, :].cpu().numpy(), col_names=None,
+    #                              label_names=network_names, label_RGBA=colors,
+    #                              load='best', oname=fname, device=DEVICE)

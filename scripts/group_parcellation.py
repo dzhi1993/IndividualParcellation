@@ -31,17 +31,10 @@ from utils import plot_multi_flat, load_batch_best, convert_hard_to_prob
 
 import sys
 sys.path.append('..')
-from global_config import MODEL_DIR, BASE_DIR, ATLAS_DIR, DEVICE
+from global_config import (ATLAS_DIR, BASE_DIR, DEVICE, ERIS_DIR, HCP_DIR,
+                           MODEL_DIR, REPLICATION_DIR)
 
-HCP_DIR = '/data/tge/Tian/HCP_img'
-REPO_ROOT = Path(__file__).resolve().parents[1]
-REPLICATION_DIR = REPO_ROOT / 'replication'
 MSHBM_17NETWORK_DIR = REPLICATION_DIR / 'MSHBM_17networks'
-ERIS_DIR = '/home/dzhi/eris_mount'
-if not Path(ERIS_DIR).exists():
-    ERIS_DIR = '/data/tge'
-if not Path(ERIS_DIR).exists():
-    raise (NameError('Could not find hcp_dir'))
 
 def get_DU15_parcellation(file_name='DU15NET_Prior', atlas_space='fs32k'):
     atlas, _ = am.get_atlas(atlas_space)
@@ -198,7 +191,7 @@ def build_model(K, arrange, sym_type, emission, atlas, cond_vec, part_vec,
             em_model = em.MixVMF(K=K, P=atlas.P, X=matrix.indicator(cond_vec[j]),
                                  part_vec=part_vec[j], **em_params)
             # trained_emi = f'Models_03/asym_Ib_space-fs32k_L_K-{K}_independent'
-            # _, model = ut.load_batch_best(trained_emi, device='cuda')
+            # _, model = ut.load_batch_best(trained_emi, device=DEVICE)
             # em_model.V = model.emissions[j].V
             # em_model.kappa = model.emissions[j].kappa
         elif emission == 'GMM':
@@ -303,7 +296,7 @@ def batch_fit(datasets, sess, type=None, subj=None, atlas=None,
         Wc = ut.get_fs32k_weights(file_type='distGOD_sp',
                                   hemis='half' if (hemis=='L') or (hemis=='R') else 'full',
                                   remove_mw=True, max_dist=10, kernel='gaussian', sigma=10,
-                                  device='cuda' if pt.cuda.is_available() else 'cpu')
+                                  device=DEVICE)
 
         # Use sparse tensor if CUDA is enabled, otherwise dense tensor
         # Wc = Wc.to_sparse_csr() if pt.cuda.is_available() else Wc.to_dense()
@@ -630,7 +623,7 @@ def load_hcp_timeseries(dataset_dir, subj_list, this_at, run_list=[0,1,2,3],
 
     # Step 1: Build the data into list of 3d tensor
     T = pd.read_csv(dataset_dir + f'/{subj_list}', sep='\t')
-    # B = pd.read_csv(f'/home/dzhi/eris_mount/Tian/HCP_img/subj_list/HCP40_training_KONG2019.tsv', delimiter='\t')
+    # B = pd.read_csv(Path(HCP_DIR) / 'subj_list/HCP40_training_KONG2019.tsv', delimiter='\t')
     # T = T[~T['participant_id'].isin(B['participant_id'])]
 
     data_dir = dataset_dir + '/rfMRI/fix_32k/{0}'
@@ -846,7 +839,7 @@ if __name__ == "__main__":
 
     ###### Convert result to label cifti
     # atlas, _ = am.get_atlas('fs32kAsym')
-    # data = mat73.loadmat('/home/dzhi/eris_mount/dzhi/projects/RANDY15/HCP_avg_40sub/avg_40sub_avg4runs_900sphere_cen_sm4_profile.mat')['profile_mat'].T
+    # data = mat73.loadmat(Path(ERIS_DIR) / 'dzhi/projects/RANDY15/HCP_avg_40sub/avg_40sub_avg4runs_900sphere_cen_sm4_profile.mat')['profile_mat'].T
     # data = data[np.newaxis, :, np.concat(atlas.vertex_mask)]
     # cond_vec = np.arange(1,1484)
     # part_vec = np.repeat(np.array([1]), 1483)
@@ -914,7 +907,7 @@ if __name__ == "__main__":
     #
     # models = np.array(models, dtype=object)
     #
-    # wdir = '/home/dzhi/eris_mount/dzhi/Indiv_par/Models/Models_04'
+    # wdir = MODEL_DIR + '/Models_04'
     # fname = f'/asym_Hc_space-fs32kAsym_K-15_arrange-independent_HCP40-avrg'
     # info.to_csv(wdir + fname + '.tsv', sep='\t')
     # with open(wdir + fname + '.pickle', 'wb') as file:

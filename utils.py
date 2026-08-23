@@ -19,17 +19,18 @@ from pathlib import Path
 from itertools import combinations
 
 try:
-    from IndividualParcellation.global_config import MODEL_DIR, BASE_DIR, ATLAS_DIR
+    from IndividualParcellation.global_config import (
+        ATLAS_DIR, BASE_DIR, BASE_DIR_PATH, DATA_ROOT_PATH, ERIS_DIR,
+        FS32K_SURFACE_DIR_PATH, HCP_DIR, MODEL_DIR, MSC_DIR, REPLICATION_DIR,
+        REPO_ROOT,
+    )
 except (ImportError, ModuleNotFoundError, NameError):
-    try:
-        from global_config import MODEL_DIR, BASE_DIR, ATLAS_DIR
-    except (ImportError, ModuleNotFoundError, NameError):
-        MODEL_DIR = None
-        BASE_DIR = None
-        ATLAS_DIR = None
+    from global_config import (
+        ATLAS_DIR, BASE_DIR, BASE_DIR_PATH, DATA_ROOT_PATH, ERIS_DIR,
+        FS32K_SURFACE_DIR_PATH, HCP_DIR, MODEL_DIR, MSC_DIR, REPLICATION_DIR,
+        REPO_ROOT,
+    )
 
-REPO_ROOT = Path(__file__).resolve().parent
-REPLICATION_DIR = REPO_ROOT / 'replication'
 MSHBM_17NETWORK_DIR = REPLICATION_DIR / 'MSHBM_17networks'
 HBP17_FUSION_PRIOR_FILE = (REPLICATION_DIR / 'group_parcellations' /
                            '17Networks' /
@@ -37,8 +38,7 @@ HBP17_FUSION_PRIOR_FILE = (REPLICATION_DIR / 'group_parcellations' /
 KONG2019_PRIOR_FILE = (MSHBM_17NETWORK_DIR /
                        'Kong-2019_MSHBM_HCP40_prob_prior.dscalar.nii')
 FS32K_CONNECTIVITY_FILES = [
-    Path('/home/dzhi/eris_mount/Tian/UKBB_full/imaging/Atlases/tpl-fs32k/fs32k_neighbours.pt'),
-    Path('/data/tge/Tian/UKBB_full/imaging/Atlases/tpl-fs32k/fs32k_neighbours.pt'),
+    FS32K_SURFACE_DIR_PATH / 'fs32k_neighbours.pt',
 ]
 CIFTI_CORTEX_STRUCTURES = (
     'CIFTI_STRUCTURE_CORTEX_LEFT',
@@ -53,21 +53,17 @@ BUCKNER7_PRIOR_FILES = [
     'atl-Buckner7_space-MNI152NLin2009cSymC_dseg.nii',
     REPLICATION_DIR / 'Buckner7' /
     'atl-Buckner7_space-MNI152NLin2009cSymC_dseg.nii',
-    Path('/data/tge/Tian/UKBB_full/imaging/Atlases/tpl-MNI152NLin2009cSymC/'
-         'atl-Buckner7_space-MNI152NLin2009cSymC_dseg.nii'),
-    Path('/home/dzhi/eris_mount/Tian/UKBB_full/imaging/Atlases/'
-         'tpl-MNI152NLin2009cSymC/'
-         'atl-Buckner7_space-MNI152NLin2009cSymC_dseg.nii'),
+    BASE_DIR_PATH / 'Atlases' / 'tpl-MNI152NLin2009cSymC' /
+    'atl-Buckner7_space-MNI152NLin2009cSymC_dseg.nii',
 ]
 BUCKNER7_CONFIDENCE_FILES = [
     REPLICATION_DIR / 'cerebellum_parcellations' /
     'Buckner2011_7NetworksConfidence_MNI152_FreeSurferConformed1mm_LooseMask.nii.gz',
     REPLICATION_DIR / 'Buckner7' /
     'Buckner2011_7NetworksConfidence_MNI152_FreeSurferConformed1mm_LooseMask.nii.gz',
-    Path('/data/tge/dzhi/Indiv_par/Buckner_JNeurophysiol11_MNI152/'
-         'Buckner2011_7NetworksConfidence_MNI152_FreeSurferConformed1mm_LooseMask.nii.gz'),
-    Path('/home/dzhi/eris_mount/dzhi/Indiv_par/Buckner_JNeurophysiol11_MNI152/'
-         'Buckner2011_7NetworksConfidence_MNI152_FreeSurferConformed1mm_LooseMask.nii.gz'),
+    DATA_ROOT_PATH / 'dzhi' / 'Indiv_par' /
+    'Buckner_JNeurophysiol11_MNI152' /
+    'Buckner2011_7NetworksConfidence_MNI152_FreeSurferConformed1mm_LooseMask.nii.gz',
 ]
 BUCKNER7_NETWORK_NAMES = [
     '???',
@@ -89,12 +85,6 @@ BUCKNER7_COLORS = np.array([
     [230, 148, 34, 255],
     [205, 62, 78, 255],
 ], dtype=np.float32) / 255
-
-ERIS_DIR = '/home/dzhi/eris_mount'
-if not Path(ERIS_DIR).exists():
-    ERIS_DIR = '/data/tge'
-if not Path(ERIS_DIR).exists():
-    ERIS_DIR = None
 
 def get_existing_file(candidates, description, required=True):
     for file_name in candidates:
@@ -200,6 +190,19 @@ def get_kong2019_indiv_parcellations(dir, subj_list, w=80, c=40, num_sess=1, sav
         nb.save(img, outdir + f'/{os.path.basename(dir)}_indiv_par_w{w}_MRF{c}_n-sess{num_sess}_1.dlabel.nii')
 
     return pt.stack(parcellations)
+
+def get_colormap_from_lut(fname):
+    """ Makes a color map from a *.lut file
+    Args:
+        fname (str): Name of Lut file
+
+    Returns:
+        _type_: _description_
+    """
+    color_info = pd.read_csv(fname, sep=' ', header=None)
+    color_map = np.zeros((color_info.shape[0] + 1, 3))
+    color_map[1:, :] = color_info.iloc[:, 1:4].to_numpy()
+    return color_map
 
 def make_per_network_cifti(parcel, space='fs32k', type='hard', outfile=None):
     atlas, am_info = am.get_atlas(space)
@@ -530,7 +533,7 @@ def load_hcp_timeseries(dataset_dir, subj_list, space='MNIAsymC2', run_list=[0,1
     # Step 1: Build the data into list of 3d tensor
     T = pd.read_csv(dataset_dir + f'/{subj_list}', sep='\t')
 
-    data_dir = '/mnt/sda/HCP_rfMRI/fix_32k/{0}'
+    data_dir = HCP_DIR + '/rfMRI/fix_32k/{0}'
     hemis_dict = {'L': 'cortex_left', 'R': 'cortex_right'}
     this_at, _ = am.get_atlas(space)
 
@@ -617,7 +620,7 @@ def load_msc_contrasts(ds_name, space='fs32k', sess='all', subj=None, smooth=Non
         sess = [sess]
     assert isinstance(sess, list)
 
-    dataset = ds.DataSetMSC('/home/dzhi/eris_mount/Tian/MSC')
+    dataset = ds.DataSetMSC(MSC_DIR)
     T = dataset.get_participants()
     # Assemble the data
     Data = None

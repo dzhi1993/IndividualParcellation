@@ -17,6 +17,8 @@ import HierarchBayesParcel.spatial as sp
 import HierarchBayesParcel.evaluation as ev
 from FusionModel.evaluate import calc_test_dcbc
 
+from global_config import RESULTS_DIR
+
 
 class FullModel:
     """Minimal simulation container for one arrangement and one emission model."""
@@ -25,13 +27,7 @@ class FullModel:
         self.arrange = arrange
         self.emission = emission
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-RESULT_DIR = REPO_ROOT / 'results' / '1.simulation'
-# pytorch cuda global flag
-# pt.cuda.is_available = lambda : False
-pt.set_default_tensor_type(pt.cuda.FloatTensor
-                           if pt.cuda.is_available() else
-                           pt.FloatTensor)
+RESULT_DIR = RESULTS_DIR / '1.simulation'
 
 
 def gaussian_kernel(size, sigma=1):
