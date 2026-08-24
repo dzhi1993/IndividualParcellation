@@ -35,5 +35,5 @@ SUBJECT_LIST="HCP${HCP_SIZE}_rest_retrain"
 
 echo "Subject list: ${SUBJECT_LIST}; chunk: ${CHUNK_ID}; repetitions: ${REPEATS_PER_JOB}; seed: ${SEED}"
 
-python -u -c 'import os, sys, torch as pt; pt.set_num_threads(int(os.environ["SLURM_CPUS_PER_TASK"])); from train_group import rerun_rest_group_fit; print(f"PyTorch CPU threads: {pt.get_num_threads()}"); rerun_rest_group_fit(num_parcel=[17], smoothing_levels=[6], subj_list=sys.argv[1], repeats=int(sys.argv[2]), seed=int(sys.argv[3]), output_suffix=f"_chunk-{int(sys.argv[4]):02d}")' \
+python -u -c 'import os, sys, torch as pt; pt.set_num_threads(int(os.environ["SLURM_CPUS_PER_TASK"])); from train_group import run_hcp_rest_group_fit; print(f"PyTorch CPU threads: {pt.get_num_threads()}"); run_hcp_rest_group_fit(num_parcel=[17], smoothing_levels=[6], subj_list=sys.argv[1], repeats=int(sys.argv[2]), seed=int(sys.argv[3]), output_suffix=f"_chunk-{int(sys.argv[4]):02d}")' \
     "${SUBJECT_LIST}" "${REPEATS_PER_JOB}" "${SEED}" "${CHUNK_ID}"

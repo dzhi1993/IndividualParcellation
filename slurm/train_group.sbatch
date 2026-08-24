@@ -28,4 +28,4 @@ sizes=(80 120 200 300 362)
 subject_list="HCP${sizes[$SLURM_ARRAY_TASK_ID]}_rest_retrain"
 
 python -u -c \
-    "from train_group import rerun_rest_group_fit; rerun_rest_group_fit(num_parcel=[17], smoothing_levels=[6], subj_list='${subject_list}')"
+    "from train_group import run_hcp_rest_group_fit; run_hcp_rest_group_fit(num_parcel=[17], smoothing_levels=[6], subj_list='${subject_list}')"
