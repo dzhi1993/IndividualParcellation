@@ -10,9 +10,10 @@
 #SBATCH --output=/PHShome/dz010/Slurm/output/hbp_rest_retrain.%A_%a.out
 #SBATCH --error=/PHShome/dz010/Slurm/output/hbp_rest_retrain.%A_%a.err
 
-set -euo pipefail
+set -eo pipefail
 
 module load conda
+source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate my_env1
 
 export PYTHONPATH=/PHShome/dz010/Workspace:/PHShome/dz010/Workspace/Functional_Fusion:/PHShome/dz010/Workspace/HierarchBayesParcel:/PHShome/dz010/Workspace/FusionModel:${PYTHONPATH:-}

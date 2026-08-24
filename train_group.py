@@ -869,8 +869,16 @@ def run_task_fit(num_parcel=[15], smoothing_levels=[6],
             with open(wdir + '/task_fusion' + fname + '.pickle', 'wb') as file:
                 pickle.dump(models, file)
 
-def rerun_rest_group_fit(num_parcel=[15], smoothing_levels=[6],
-                         subj_list=None):
+def run_hcp_rest_group_fit(num_parcel=[15], smoothing_levels=[6],
+                         subj_list=None, repeats=50, seed=None,
+                         output_suffix=''):
+    if repeats < 1:
+        raise ValueError('repeats must be at least 1.')
+    if seed is not None:
+        np.random.seed(seed)
+        pt.manual_seed(seed)
+
+    subj_list = str(subj_list).lstrip('/')
     A = pd.read_csv(HCP_PARTICIPANTS_FILE, delimiter='\t')
     B = pd.read_csv(HCP_DIR + f'/subj_list/rest_group_retrain/{subj_list}.tsv',
                     delimiter='\t')
@@ -879,23 +887,55 @@ def rerun_rest_group_fit(num_parcel=[15], smoothing_levels=[6],
     for k in num_parcel:
         for train_smooth in smoothing_levels:
             print(f'Training K={k}, and smoothing = {train_smooth} ...')
-            wdir, fname, info, models = fit_all(set_ind=[7], K=k, repeats=50,
+            wdir, fname, info, models = fit_all(set_ind=[7], K=k,
+                                                repeats=repeats,
                                                 model_type='03',
                                                 this_sess=None, sym_type=['asym'],
                                                 space='fs32k',
                                                 smooth=['4fwhm_binarized'],
                                                 subj_list=[hcp_subj_ind],
                                                 arrange='independent', Wc_theta=0.0,
-                                                part_num=[[1,2]],
-                                                training_type='task', sc=False,
-                                                em_params={'subjects_equal_weight': True,
+                                                training_type='rest', sc=False,
+                                                em_params={'uniform_kappa': True,
+                                                           'subjects_equal_weight': True,
                                                            'subject_specific_kappa': False,
                                                            'parcel_specific_kappa': False})
 
-            fname = fname + f'_sm{train_smooth}fwhm_zstat_masked-hi0.1lo0.1_nsub-{subj_list}'
+            fname = fname + f'_sm{train_smooth}fwhm_zstat_masked-hi0.1lo0.1_nsub-{subj_list}{output_suffix}'
+            if seed is not None:
+                info['seed'] = seed
             info.to_csv(wdir + '/task_fusion' + fname + '.tsv', sep='\t')
             with open(wdir + '/task_fusion' + fname + '.pickle', 'wb') as file:
                 pickle.dump(models, file)
+
+
+def merge_rest_group_fit_chunks(subj_list, chunk_ids, K=17, smoothing=6):
+    """Merge independently fitted repetition chunks into one model batch."""
+    subj_list = str(subj_list).lstrip('/')
+    model_dir = Path(ut.model_dir) / 'Models' / 'Models_03' / 'task_fusion'
+    stem = (f'asym_Hc_space-fs32k_K-{K}_sm{smoothing}fwhm_'
+            f'zstat_masked-hi0.1lo0.1_nsub-{subj_list}')
+
+    info_chunks = []
+    models = []
+    for chunk_id in chunk_ids:
+        chunk_stem = model_dir / f'{stem}_chunk-{int(chunk_id):02d}'
+        info = pd.read_csv(str(chunk_stem) + '.tsv', sep='\t')
+        with open(str(chunk_stem) + '.pickle', 'rb') as file:
+            chunk_models = pickle.load(file)
+        if len(info) != len(chunk_models):
+            raise ValueError(f'Chunk {chunk_id} has inconsistent TSV and pickle lengths.')
+        info['chunk'] = int(chunk_id)
+        info_chunks.append(info)
+        models.extend(chunk_models)
+
+    merged_info = pd.concat(info_chunks, ignore_index=True)
+    output_stem = model_dir / stem
+    merged_info.to_csv(str(output_stem) + '.tsv', sep='\t')
+    with open(str(output_stem) + '.pickle', 'wb') as file:
+        pickle.dump(np.array(models, dtype=object), file)
+    print(f'Merged {len(models)} repetitions into {output_stem}.')
+    return str(output_stem)
 
 if __name__ == "__main__":
     # Example resting-state HCP model:
@@ -909,7 +949,7 @@ if __name__ == "__main__":
 
     # Resting-state retraining
     for nsub in [80,120,200,300,362]:
-        rerun_rest_group_fit(num_parcel=[17], smoothing_levels=[6],
+        run_hcp_rest_group_fit(num_parcel=[17], smoothing_levels=[6],
                              subj_list=f'/HCP{nsub}_rest_retrain')
 
     # Write-in group map results into CIFTI
